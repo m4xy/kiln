@@ -7,6 +7,7 @@ import fckt.io.Files.*
 @FileSystem @Process main() = {
   dir = projects("dependencies")
   path("build/test-repository").delete()
+  path("build/test-cache").delete()
   write(dir, "units/build.fk", "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
   write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100\n}\n")
   write(dir, "units/test/cents.fk", "import uk.m4xy.units.Cents\nmain() = assertEquals(200, Cents.of(2))\n")
@@ -23,14 +24,19 @@ import fckt.io.Files.*
   // A library is checked, tested and copied: only what's under its group.
   expectContains(kiln(units, ["publishLocal"]).value, "  passed cents.fk\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0")
   assertEquals(0, kiln(money, ["publishLocal"]).code)
-  expectContains(kiln(money, ["compile"]).value, "  checked 1 package: uk.m4xy.money")
+  // publishLocal compiled it, so it's up to date.
+  expectContains(kiln(money, ["compile"]).value, "> Task :compile\n  up to date\n")
   repository = path("build/test-repository")
   assertEquals("uk.m4xy:units:1.0.0\n", repository.resolve("uk.m4xy/money/2.1.0/dependencies").readText())
   assert(repository.resolve("uk.m4xy/money/2.1.0/src/uk/m4xy/money/Money.fk").exists())
   // The project from its folder, with the libraries it uses and theirs, each compiled once:
   // money's units was, when money was.
   assertEquals("> Task :compile\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
-  assertEquals("> Task :compile\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
+  assertEquals("> Task :compile\n  up to date\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
+  // Where editors find its packages and libraries.
+  paths = dir.resolve("shop/.kiln/paths").readLines()
+  assertEquals(["source src", "source ../pricing/src"], paths.filter(line -> line.startsWith("source ")))
+  assertEquals(2, paths.filter(line -> line.startsWith("library ") && line.endsWith("/interface")).size)
   // Published again, it's compiled again.
   write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n")
   assertEquals(0, kiln(units, ["publishLocal"]).code)

@@ -67,6 +67,13 @@ module Compiling {
     own + children.filter(f -> f.isDirectory()).flatMap(f -> packagesIn(root, f))
   }
 
+  // What a program or library compiled with linking from roots, and files beside, is compiled
+  // from, as a digest: fckt and OCaml, the libraries, and each source file's name and text. Where
+  // it's what it was, what was compiled then is what would be now.
+  @FileSystem inputs(linking: Linking, roots: List<Path>, files: List<Path>): String =
+    digest(([linking.standard.value] + linking.libraries.map(lib -> lib.folder.value) +
+      (roots.flatMap(root -> sourcesIn(root)) + files).map(f -> "${f.value}\n${f.readText()}")).joinToString("\n"))
+
   private interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap(lib -> ["-L", lib.folder.resolve("interface").value])
 
   // The standard library, compiled once: fckt_std, in toolchain's std.

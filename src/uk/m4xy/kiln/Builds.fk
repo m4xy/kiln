@@ -69,14 +69,23 @@ module Builds {
   }
 
   // file.fk to OCaml, with its packages in roots, then to a program at program, linked with what
-  // linking has compiled.
-  @Building private build(project: Project, linking: Linking, roots: List<Path>, file: Path, program: Path): Unit = {
-    project.output.resolve("ocaml").makeDirs()
-    when (program.parent) {
-      Some(dir) -> dir.makeDirs()
-      None -> Unit
+  // linking has compiled; unless it's up to date, compiled from inputs, a digest of what it's
+  // compiled from. Whether it was compiled.
+  @Building private build(project: Project, linking: Linking, roots: List<Path>, file: Path, program: Path, inputs: String): Boolean = {
+    ocaml = project.output.resolve("ocaml")
+    stamp = ocaml.resolve(program.name + ".inputs")
+    if (program.exists() && stamp.exists() && stamp.readText() == inputs) false
+    else {
+      ocaml.makeDirs()
+      stamp.delete()
+      when (program.parent) {
+        Some(dir) -> dir.makeDirs()
+        None -> Unit
+      }
+      compileProgram(linking, roots, file, ocaml.resolve(program.name + ".ml"), program)
+      stamp.writeText(inputs)
+      true
     }
-    compileProgram(linking, roots, file, project.output.resolve("ocaml").resolve(program.name + ".ml"), program)
   }
 
   // A library has no main: its packages are compiled as a library is, which checks all of them and
@@ -84,15 +93,24 @@ module Builds {
   @Building private compile(project: Project): Unit = {
     resolved = resolve(project)
     linking = linking(resolved)
-    if (project.main.exists()) build(project, linking, resolved.roots, project.main, project.output.resolve("bin").resolve(project.name))
-    else {
+    remember(resolved, linking)
+    inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
+    if (project.main.exists()) {
+      if (!build(project, linking, resolved.roots, project.main, project.output.resolve("bin").resolve(project.name), inputs)) println("  up to date")
+    } else {
       packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
       if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
       library = project.output.resolve("library")
-      library.makeDirs()
-      unit = unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
-      compilePackages(linking, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
-      println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
+      stamp = library.resolve("inputs")
+      if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
+      else {
+        library.delete()
+        library.makeDirs()
+        unit = unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
+        compilePackages(linking, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
+        stamp.writeText(inputs)
+        println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
+      }
     }
   }
 
@@ -102,12 +120,27 @@ module Builds {
     if (files.isEmpty()) println("  no tests in ${project.tests.value}")
     resolved = if (files.isEmpty()) Resolved([], []) else resolve(project)
     linking = if (files.isEmpty()) Linking(project.output, []) else linking(resolved)
+    if (!files.isEmpty()) remember(resolved, linking)
+    // A test that passed, and whose program would be compiled from what it was, isn't run again.
+    shared = if (files.isEmpty()) "" else inputs(linking, resolved.roots + [project.tests], [])
     failed = files.filter(file -> {
       program = project.output.resolve("tests").resolve(file.nameWithoutExtension)
-      build(project, linking, resolved.roots, file, program)
-      exit = run(program.value, [])
-      if (exit.code == 0) println("  passed ${file.name}") else println("  FAILED ${file.name}\n${exit.value.trim()}")
-      exit.code != 0
+      passed = project.output.resolve("tests").resolve(file.nameWithoutExtension + ".passed")
+      if (passed.exists() && passed.readText() == shared && program.exists()) {
+        println("  passed ${file.name} (up to date)")
+        false
+      } else {
+        passed.delete()
+        build(project, linking, resolved.roots, file, program, shared)
+        exit = run(program.value, [])
+        if (exit.code == 0) {
+          passed.writeText(shared)
+          println("  passed ${file.name}")
+        } else {
+          println("  FAILED ${file.name}\n${exit.value.trim()}")
+        }
+        exit.code != 0
+      }
     })
     if (!failed.isEmpty()) fail("${failed.size} of ${files.size} tests failed")
   }
@@ -138,6 +171,15 @@ module Builds {
       Folder(_) -> []
     }).joinToString(""))
     println("  published ${coordinatesText(coordinates)} to ${target.value}")
+  }
+
+  // For editors, in .kiln/paths: the folders the project's packages are in, a line each, and the
+  // interfaces of the libraries it uses, as compiled, so they can check its files as kiln does.
+  @FileSystem private remember(resolved: Resolved, linking: Linking): Unit = {
+    folder = path(".kiln")
+    folder.makeDirs()
+    folder.resolve("paths").writeText((resolved.roots.map(root -> "source ${root.value}\n") +
+      linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
   }
 
   // Whether the file declares main, on a line of its own, maybe after its effects: @Console main(...).

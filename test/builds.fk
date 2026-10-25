@@ -17,7 +17,12 @@ tasks = standardTasks + [
 """)
   expectContains(kiln(shop, ["tasks"]).value, "  stamp - Writes the version")
   assertEquals("> Task :compile\n> Task :test\n  passed prices.fk\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
-  assertEquals("> Task :compile\n> Task :run\ntotal 6 for a b\n> Task :stamp\nBUILD SUCCESSFUL\n", kiln(shop, ["run", "stamp", "--", "a", "b"]).value)
+  // What's up to date isn't compiled again, and a test that passed isn't run again.
+  assertEquals("> Task :compile\n  up to date\n> Task :run\ntotal 6 for a b\n> Task :stamp\nBUILD SUCCESSFUL\n", kiln(shop, ["run", "stamp", "--", "a", "b"]).value)
+  assertEquals("> Task :compile\n  up to date\n> Task :test\n  passed prices.fk (up to date)\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
+  // A change to what they're compiled from compiles and runs them again.
+  write(shop, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.fold(0, (a, b) -> a + b)\n}\n")
+  assertEquals("> Task :compile\n> Task :test\n  passed prices.fk\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
   assertEquals("1.2.0", shop.resolve("build/VERSION").readText())
   // A failing test fails the build.
   write(shop, "test/broken.fk", "main() = assertEquals(1, 2)\n")

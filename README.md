@@ -38,7 +38,9 @@ It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in 
 `kiln build`, run in a project's folder, compiles `src/main.fk` and the packages in `src` to
 `build/bin/<name>`, then compiles and runs each program in `test`, any of which failing fails the
 build. Several tasks run in turn, each once and after the tasks it depends on: `kiln clean build`.
-`kiln -C dir build` builds the project in `dir`.
+`kiln -C dir build` builds the project in `dir`. What's up to date isn't done again: a program
+whose sources, libraries, fckt and OCaml are what they were isn't compiled again, and a test that
+passed with them isn't run again; `kiln clean` forgets.
 
 | Task | |
 | --- | --- |
@@ -127,7 +129,8 @@ version control.
 
 Programs are compiled separately: the standard library (`fckt --standard`) and each library
 (`fckt --library`) once, with `ocamlopt -c`, into the cache, in a folder for each fckt and OCaml;
-then each program on its own (`fckt -L`), which is linked with them.
+then each program on its own (`fckt -L`), which is linked with them. Each compile also writes `.kiln/paths`: the
+project's source folders and its libraries' interfaces, where fckt's IntelliJ plugin finds them.
 
 | Variable | |
 | --- | --- |
