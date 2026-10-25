@@ -14,7 +14,5 @@ if [ ! -d "$FK_TESTS" ]; then
   FK_TESTS=build/fk-tests
   [ -d "$FK_TESTS" ] || git clone -q https://github.com/m4xy/fk-tests "$FK_TESTS"
 fi
-for project in runner . kiln; do
-  FCKT="$FCKT" KILN="$KILN" KILN_LIB="$PWD/src" "$KILN" -C "$FK_TESTS/$project" publishLocal
-done
+FCKT="$FCKT" KILN="$KILN" KILN_LIB="$PWD/src" "$KILN" -C "$FK_TESTS" publishLocal
 FCKT="$FCKT" "$KILN" install

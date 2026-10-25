@@ -17,4 +17,6 @@ type Project(
   sources: List<Path> = [path("src")],
   // Where what's built goes: the program is output/bin/name.
   output: Path = path("build"),
+  // Where its libraries are looked for, in order; kiln sets it from settings.fk.
+  repositories: List<Repository> = [Local],
 )

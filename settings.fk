@@ -1,0 +1,2 @@
+// What kiln's build script uses: fk-tests' plugin, for its tests, which bootstrap.sh publishes.
+settings = Settings(uses = [library("uk.m4xy:fk-tests-kiln:0.1.0")])

@@ -1,0 +1,9 @@
+import fckt.io.Path
+
+// Where libraries are looked for: Local, where publishLocal publishes, ~/.kiln/repository or
+// KILN_REPOSITORY; or another folder, laid out as it is, group/name/version. settings.fk says which,
+// in the order they're tried.
+type Repository {
+  Local,
+  At(folder: Path),
+}

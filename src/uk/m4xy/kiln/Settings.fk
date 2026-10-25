@@ -1,0 +1,12 @@
+import fckt.io.Path
+
+// What a build is made of, and where what it uses is from. settings.fk declares settings =
+// Settings(...), which kiln reads before build.fk, for the project in its folder and those it lists.
+type Settings(
+  // Where libraries are looked for, in the order they're tried.
+  repositories: List<Repository> = [Local],
+  // The libraries and projects build scripts are compiled with, for the plugins they apply.
+  uses: List<Dependency> = [],
+  // The projects built with the one in this folder, in their folders, each before it.
+  projects: List<Path> = [],
+)

@@ -37,7 +37,7 @@ module Compiling {
     // What one fckt or OCaml compiled, another can't use, so each has its own folder.
     toolchain = cache().resolve(digest(fcktVersion() + output("ocamlopt", ["-version"])).take(16))
     standard = standardLibrary(toolchain)
-    Linking(standard, resolved.libraries.fold([], (done, lib) -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done)))
+    Linking(standard, resolved.libraries.fold([], (done, lib) -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done, resolved.repositories)))
   }
 
   // What fckt --version says, remembered for the fckt that said it, as asking means starting a JVM:
@@ -118,35 +118,35 @@ module Compiling {
 
   // done, with lib compiled after the libraries it uses, unless it is already. Of those chosen,
   // the versions it uses; through, the libraries that led to it, which it can't use in turn.
-  @Building private compileLibrary(toolchain: Path, standard: Path, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>): List<CompiledLibrary> =
+  @Building private compileLibrary(toolchain: Path, standard: Path, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>, repositories: List<Repository>): List<CompiledLibrary> =
     if (done.any(c -> c.coordinates == lib)) done
     else {
       if (through.contains(lib)) fail("${(through + [lib]).map(c -> coordinatesText(c)).joinToString(" uses ")}, so none can be compiled first")
-      uses = usedBy(lib, chosen)
-      before = uses.fold(done, (all, used) -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all))
+      uses = usedBy(lib, chosen, repositories)
+      before = uses.fold(done, (all, used) -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all, repositories))
       // What it uses, and what they do: their interfaces' types are its interface's.
-      needed = closure(uses, chosen, [])
-      before + [compileOne(toolchain, standard, lib, before.filter(c -> needed.contains(c.coordinates)))]
+      needed = closure(uses, chosen, [], repositories)
+      before + [compileOne(toolchain, standard, lib, before.filter(c -> needed.contains(c.coordinates)), repositories)]
     }
 
   // Of those chosen, the versions of the libraries lib says it uses.
-  @FileSystem @Process private usedBy(lib: Coordinates, chosen: List<Coordinates>): List<Coordinates> =
-    published(lib).flatMap(d -> when (d) {
+  @FileSystem @Process private usedBy(lib: Coordinates, chosen: List<Coordinates>, repositories: List<Repository>): List<Coordinates> =
+    published(lib, repositories).flatMap(d -> when (d) {
       Library(wanted) -> chosen.filter(c -> c.group == wanted.group && c.name == wanted.name)
       Folder(_) -> []
       Kiln -> []
     })
 
   // libs, with those they use, and those they use.
-  @FileSystem @Process private closure(libs: List<Coordinates>, chosen: List<Coordinates>, found: List<Coordinates>): List<Coordinates> = when (libs) {
+  @FileSystem @Process private closure(libs: List<Coordinates>, chosen: List<Coordinates>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (libs) {
     [] -> found
-    [lib, *rest] -> if (found.contains(lib)) closure(rest, chosen, found) else closure(rest + usedBy(lib, chosen), chosen, found + [lib])
+    [lib, *rest] -> if (found.contains(lib)) closure(rest, chosen, found, repositories) else closure(rest + usedBy(lib, chosen, repositories), chosen, found + [lib], repositories)
   }
 
   // lib's packages, compiled with the libraries it uses: once for each source it's published
   // with, and each set of those, so publishing it again compiles it again.
-  @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>): CompiledLibrary = {
-    src = folderOf(lib).resolve("src")
+  @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
+    src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
     files = sourcesIn(src).map(f -> "${f.relativeTo(src).getOrElse(f).value}\n${f.readText()}")
     key = digest(([coordinatesText(lib)] + files + uses.map(u -> u.folder.name)).joinToString("\n")).take(12)
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")

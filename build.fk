@@ -2,11 +2,10 @@
 // fk-tests', which fk-tests-kiln runs; bootstrap.sh publishes them first.
 import uk.m4xy.fktests.kiln.FkTests.*
 
-plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")]
 
 project = Project(name = "kiln", group = "uk.m4xy", version = "0.1.0")
 
-tasks = standardTasks + [
+tasks = [
   fkTests(),
   Task("install", "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = ["compile"], action = install),
 ]

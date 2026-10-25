@@ -9,7 +9,8 @@ import uk.m4xy.kiln.Dependencies.*
 import uk.m4xy.kiln.Compiling.*
 
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
-// calls runBuild(project, args) with what follows it on the command line.
+// calls runBuild(project, args) with what follows it on the command line, and the script's tasks
+// and plugins.
 module Builds {
   // The tasks every project has. check is what checks the project, which is nothing but the tasks
   // part of it, as a plugin's tests are; build and publishLocal check it.
@@ -24,11 +25,13 @@ module Builds {
   ]
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
-  // each, as Build's args, for run. tasks lists them.
-  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = standardTasks): Unit = {
+  // each, as Build's args, for run. The tasks are every project's, plugins', and tasks, the
+  // script's own.
+  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = []): Unit = {
     names = args.takeWhile(a -> a != "--")
     build = Build(project, args.dropWhile(a -> a != "--").drop(1))
     result = attempt {
+      tasks = tasksOf(project, tasks, plugins)
       // Only these, for another project that depends on this one.
       if (names == ["roots"]) {
         resolved = resolve(project)
@@ -50,6 +53,34 @@ module Builds {
       Error(reason) -> fail("BUILD FAILED: $reason")
     }
   }
+
+  // The tasks a build has: every project's, then its plugins', then its own, own. Its own replace
+  // any of the same name, so a script can change any task. A plugin's can't replace another's, or
+  // one every project has: the script makes that task itself, to say which it means.
+  @Fail tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
+    mine = own.map(t -> t.name)
+    made = plugins.flatMap(p -> p.tasks(project)).filter(t -> !mine.contains(t.name))
+    made.forEach(task -> {
+      by = plugins.filter(p -> p.tasks(project).any(t -> t.name == task.name)).map(p -> p.name())
+      if (by.size > 1) fail("plugins ${by.joinToString(" and ")} both make a task ${task.name}: make it in tasks, to say which it is")
+      if (standardTasks.any(t -> t.name == task.name)) fail("plugin ${by.joinToString(" and ")} makes a task ${task.name}, which every project has: make it in tasks, to say which it is")
+    })
+    standardTasks.filter(t -> !mine.contains(t.name)) + made + own
+  }
+
+  // settings as kiln reads them before it builds, a line each, as written: the repositories, in
+  // order; what build scripts use; and the projects.
+  settingsLines(settings: Settings): List<String> =
+    settings.repositories.map(r -> when (r) {
+      Local -> "repository local"
+      At(folder) -> "repository at ${folder.value}"
+    }) +
+    settings.uses.flatMap(d -> when (d) {
+      Library(lib) -> ["uses library ${coordinatesText(lib)}"]
+      Folder(folder) -> ["uses project ${folder.value}"]
+      Kiln -> []
+    }) +
+    settings.projects.map(project -> "project ${project.value}")
 
   @Console private listTasks(project: Project, tasks: List<Task>): Unit = {
     println("Tasks of ${project.name} ${project.version}:")
@@ -128,7 +159,7 @@ module Builds {
       Kiln -> Unit
     })
     coordinates = Coordinates(project.group, project.name, project.version)
-    target = folderOf(coordinates)
+    target = publishedAt(coordinates)
     groupPath = project.group.split(".").joinToString("/")
     // Its packages are all its group's, so they never meet another library's.
     project.sources.flatMap(root -> packagesIn(root, root)).forEach(p -> {

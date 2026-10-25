@@ -35,8 +35,20 @@ module Dependencies {
     None -> path(env("HOME").getOrElse(".")).resolve(".kiln/repository")
   }
 
-  // A library's folder in the repository: group/name/version.
-  @Process folderOf(lib: Coordinates): Path = repository().resolve("${lib.group}/${lib.name}/${lib.version}")
+  // Where publishLocal puts lib: its folder in the local repository, group/name/version.
+  @Process publishedAt(lib: Coordinates): Path = repository().resolve(within(lib))
+
+  // Where lib is: its folder in the first of repositories that has it.
+  @FileSystem @Process folderOf(lib: Coordinates, repositories: List<Repository>): Option<Path> =
+    repositories.map(r -> folderIn(r).resolve(within(lib))).find(folder -> folder.isDirectory())
+
+  // The folder a repository is.
+  @Process folderIn(source: Repository): Path = when (source) {
+    Local -> repository()
+    At(folder) -> folder
+  }
+
+  private within(lib: Coordinates): String = "${lib.group}/${lib.name}/${lib.version}"
 
   // What the project's programs are built from: the folders its packages are in, then its folder
   // projects', each once; and the libraries it uses, with theirs and its folder projects'. Where two
@@ -45,27 +57,33 @@ module Dependencies {
     found = folders(project.dependencies).map(folder -> folderResolved(folder))
     Resolved(
       (project.sources + found.flatMap(r -> r.roots) + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
-      chosen(libraries(project.dependencies, []) + found.flatMap(r -> r.libraries)),
+      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap(r -> r.libraries)),
+      project.repositories,
     )
   }
 
-  // The libraries asked for, with theirs, as the repository says.
-  @FileSystem @Process private libraries(wanted: List<Dependency>, found: List<Coordinates>): List<Coordinates> = when (wanted) {
+  // The libraries asked for, with theirs, as the repositories say.
+  @FileSystem @Process private libraries(wanted: List<Dependency>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (wanted) {
     [] -> found
     [Library(lib), *rest] ->
-      if (found.contains(lib)) libraries(rest, found)
+      if (found.contains(lib)) libraries(rest, found, repositories)
       else {
-        if (!folderOf(lib).isDirectory()) fail("there's no ${coordinatesText(lib)} in ${repository().value}: run kiln publishLocal in its project")
-        libraries(rest + published(lib), found + [lib])
+        if (folderOf(lib, repositories).isNone()) {
+          fail("there's no ${coordinatesText(lib)} in ${repositories.map(r -> folderIn(r).value).joinToString(" or ")}: run kiln publishLocal in its project")
+        }
+        libraries(rest + published(lib, repositories), found + [lib], repositories)
       }
-    [Folder(_), *rest] -> libraries(rest, found)
-    [Kiln, *rest] -> libraries(rest, found)
+    [Folder(_), *rest] -> libraries(rest, found, repositories)
+    [Kiln, *rest] -> libraries(rest, found, repositories)
   }
 
   // What a published library depends on: its dependencies file, a library's coordinates a line.
-  @FileSystem @Process published(lib: Coordinates): List<Dependency> = {
-    file = folderOf(lib).resolve("dependencies")
-    if (file.exists()) file.readLines().filter(line -> !line.isBlank()).map(line -> library(line.trim())) else []
+  @FileSystem @Process published(lib: Coordinates, repositories: List<Repository>): List<Dependency> = when (folderOf(lib, repositories)) {
+    Some(folder) -> {
+      file = folder.resolve("dependencies")
+      if (file.exists()) file.readLines().filter(line -> !line.isBlank()).map(line -> library(line.trim())) else []
+    }
+    None -> []
   }
 
   // Of each library, the highest version asked for.

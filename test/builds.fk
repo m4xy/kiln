@@ -1,3 +1,4 @@
+import fckt.io.Path
 import fckt.io.FileSystem
 import fckt.io.Process
 import fckt.io.Paths.*
@@ -13,7 +14,7 @@ prices = "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n"
   write(shop, "src/main.fk", "import pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
   write(shop, "build.fk", """project = Project(name = "shop", version = "1.2.0")
 
-tasks = standardTasks + [
+tasks = [
   Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
 ]
 """)
@@ -33,7 +34,7 @@ tasks = standardTasks + [
   write(lint, "src/pricing/Prices.fk", prices)
   write(lint, "build.fk", """project = Project(name = "lint")
 
-tasks = standardTasks + [
+tasks = [
   Task("lint", "Looks at the code", partOf = ["check"], action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine")),
 ]
 """)
@@ -43,35 +44,126 @@ tasks = standardTasks + [
   expectContains(failed.value, "> Task :lint\nBUILD FAILED: too loose")
 }
 
-// A plugin is a library, or a project, whose functions make tasks with kiln's library.
+// A plugin is a module that follows Plugin, in a library or a project settings.fk says build
+// scripts use, which a script applies in plugins; a functor's is configured with modules, where
+// it's applied.
 @Test @FileSystem @Process aPluginMakesTasks() = {
   dir = projects("plugins")
-  write(dir, "greeting/build.fk", "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
-  write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import uk.m4xy.kiln.*
-
-module Greetings {
-  greet(greeting: String): Task = Task("greet", "Greets the project", action = build -> println("  " + greeting + ", " + build.project.name))
-}
-""")
+  greeting(dir)
   write(dir, "shop/src/pricing/Prices.fk", prices)
   shop = dir.resolve("shop")
-  build = (plugin: String) -> write(shop, "build.fk", """import uk.m4xy.greeting.Greetings.*
-
-plugins = [$plugin]
+  build = (uses: String, plugins: String) -> {
+    write(shop, "settings.fk", "settings = Settings(uses = [$uses])\n")
+    write(shop, "build.fk", """import uk.m4xy.greeting.*
 
 project = Project(name = "shop")
 
-tasks = standardTasks + [greet("hello")]
+module Howdy : Words {
+  greeting(): String = "howdy"
+}
+
+plugins = [$plugins]
 """)
-  build("projectAt(\"../greeting\")")
-  assertEquals("> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  }
+  build("projectAt(\"../greeting\")", "Greetings(), Greetings(W = Howdy)")
+  // Two plugins can't make the same task; the script makes it, to say which.
+  expectContains(kiln(shop, ["greet"]).value, "BUILD FAILED: plugins greetings and greetings both make a task greet: make it in tasks, to say which it is")
+  build("projectAt(\"../greeting\")", "Greetings(W = Howdy)")
+  expectContains(kiln(shop, ["tasks"]).value, "  greet - Greets the project")
+  assertEquals("> Task :greet\n  howdy, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
   // Published, it's used from the repository.
-  build("library(\"uk.m4xy:greeting:1.0.0\")")
-  expectContains(kiln(shop, ["greet"]).value, "build.fk: its plugin uk.m4xy:greeting:1.0.0 isn't in")
+  build("library(\"uk.m4xy:greeting:1.0.0\")", "Greetings()")
+  expectContains(kiln(shop, ["greet"]).value, "settings.fk: it uses uk.m4xy:greeting:1.0.0, which isn't in")
   assertEquals(0, kiln(dir.resolve("greeting"), ["publishLocal"]).code)
   assertEquals("> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
   // kiln's library isn't published with it, as kiln has it.
   assertEquals("", path("build/test-repository/uk.m4xy/greeting/1.0.0/dependencies").readText())
+}
+
+// A script's own task replaces a plugin's, or one every project has, of its name.
+@Test @FileSystem @Process aScriptsTaskReplacesAPlugins() = {
+  dir = projects("replacing")
+  greeting(dir)
+  write(dir, "shop/src/pricing/Prices.fk", prices)
+  shop = dir.resolve("shop")
+  write(shop, "settings.fk", "settings = Settings(uses = [projectAt(\"../greeting\")])\n")
+  build = (plugins: String) -> write(shop, "build.fk", """import uk.m4xy.greeting.*
+
+project = Project(name = "shop")
+
+plugins = [$plugins]
+
+tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
+""")
+  build("Greetings(), Cleaning")
+  // A plugin can't replace what every project has.
+  expectContains(kiln(shop, ["greet"]).value, "BUILD FAILED: plugin cleaning makes a task clean, which every project has")
+  build("Greetings()")
+  assertEquals("> Task :greet\n  *waves*\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  // What a script is compiled with isn't the script's to say.
+  write(shop, "build.fk", "plugins = [projectAt(\"../greeting\")]\n\nproject = Project(name = \"shop\")\n")
+  expectContains(kiln(shop, ["tasks"]).value, "build.fk: the libraries and projects it's compiled with go in settings.fk")
+}
+
+// A project, greeting, in dir, whose plugins greet, with Words, and clean.
+@FileSystem greeting(dir: Path): Unit = {
+  write(dir, "greeting/build.fk", "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
+  write(dir, "greeting/src/uk/m4xy/greeting/Words.fk", "spec Words {\n  greeting(): String\n}\n")
+  write(dir, "greeting/src/uk/m4xy/greeting/Hello.fk", "module Hello : Words {\n  greeting(): String = \"hello\"\n}\n")
+  write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import uk.m4xy.kiln.*
+
+module Greetings(W: Words = Hello) : Plugin {
+  name(): String = "greetings"
+  tasks(project: Project): List<Task> = [Task("greet", "Greets the project", action = build -> println("  " + W.greeting() + ", " + build.project.name))]
+}
+""")
+  write(dir, "greeting/src/uk/m4xy/greeting/Cleaning.fk", """import uk.m4xy.kiln.*
+
+module Cleaning : Plugin {
+  name(): String = "cleaning"
+  tasks(project: Project): List<Task> = [Task("clean", "Cleans differently", action = build -> Unit)]
+}
+""")
+}
+
+// settings.fk's projects are built with the one in its folder, each before it, in its own folder;
+// they share its settings, and a folder it doesn't list doesn't.
+@Test @FileSystem @Process projectsAreBuiltTogether() = {
+  dir = projects("together")
+  write(dir, "settings.fk", "settings = Settings(projects = [path(\"pricing\"), path(\"shop\")])\n")
+  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(\"hello\", \"Says hello\", action = build -> println(\"  pricing\"))]\n")
+  write(dir, "shop/build.fk", "project = Project(name = \"shop\")\n\ntasks = [Task(\"hello\", \"Says hello\", action = build -> println(\"  shop\"))]\n")
+  assertEquals(
+    "> Project pricing\n> Task :hello\n  pricing\nBUILD SUCCESSFUL\n> Project shop\n> Task :hello\n  shop\nBUILD SUCCESSFUL\n",
+    kiln(dir, ["hello"]).value,
+  )
+  // In one of them, just it.
+  assertEquals("> Task :hello\n  shop\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["hello"]).value)
+  // One that fails stops the rest.
+  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(\"hello\", \"Fails\", action = build -> fail(\"no\"))]\n")
+  result = kiln(dir, ["hello"])
+  assertEquals(1, result.code)
+  assertEquals(false, result.value.contains("> Project shop"))
+}
+
+// Libraries are looked for in settings.fk's repositories, in order: the first that has one gives it.
+@Test @FileSystem @Process repositoriesAreTriedInOrder() = {
+  dir = projects("ordered")
+  write(dir, "words/build.fk", "project = Project(name = \"words\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
+  write(dir, "words/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"local\"\n}\n")
+  assertEquals(0, kiln(dir.resolve("words"), ["publishLocal"]).code)
+  // The team's repository has another words 1.0.0.
+  path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(dir.resolve("team/uk.m4xy/words/1.0.0"))
+  write(dir, "team/uk.m4xy/words/1.0.0/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"team\"\n}\n")
+  write(dir, "shop/build.fk", "project = Project(name = \"shop\", dependencies = [library(\"uk.m4xy:words:1.0.0\")])\n")
+  write(dir, "shop/src/main.fk", "import uk.m4xy.words.Words\n\nmain() = println(Words.word)\n")
+  order = (repositories: String) -> write(dir, "shop/settings.fk", "settings = Settings(repositories = [$repositories])\n")
+  order("At(path(\"../team\")), Local")
+  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nteam\n")
+  order("Local, At(path(\"../team\"))")
+  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nlocal\n")
+  order("At(path(\"../nowhere\"))")
+  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "test-projects/ordered/nowhere: run kiln publishLocal in its project")
 }
 
 // What isn't a project, or a task, says so.

@@ -1,5 +1,6 @@
 import fckt.io.Path
 
 // What a project's programs are built from: the folders their packages are in, the project's and
-// its folder projects', and the libraries they use, in the versions chosen.
-type Resolved(roots: List<Path>, libraries: List<Coordinates>)
+// its folder projects', and the libraries they use, in the versions chosen, from the first of
+// repositories that has each.
+type Resolved(roots: List<Path>, libraries: List<Coordinates>, repositories: List<Repository> = [Local])

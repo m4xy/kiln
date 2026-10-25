@@ -5,16 +5,21 @@ them, and publishes them as libraries for other projects to use. What it does is
 bring more, as [fk-tests](https://github.com/m4xy/fk-tests) brings tests. It's written in fckt, and
 builds itself.
 
-A project is a folder with a `build.fk`, which says what the project is, in fckt:
+A project is a folder with a `build.fk`, which says what the project is, in fckt; beside it, or
+above, `settings.fk` says what build scripts are compiled with:
 
 ```kotlin
-import uk.m4xy.fktests.kiln.FkTests.*
+// settings.fk
+settings = Settings(uses = [library("uk.m4xy:fk-tests-kiln:0.1.0")])
+```
 
-plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")]
+```kotlin
+// build.fk
+import uk.m4xy.fktests.kiln.FkTests.*
 
 project = Project(name = "shop")
 
-tasks = standardTasks + [fkTests()]
+tasks = [fkTests()]
 ```
 
 ```
@@ -87,12 +92,12 @@ project = Project(
 A task is a `Task(name, description, dependsOn, partOf, action)`, whose action is fckt that may
 print, use files and run programs (`@Building`), given the `Build`: the project, and what follows
 `--`. A task `partOf` another runs before it, as if that depended on it. A build script adds its
-own by declaring `tasks`:
+own by declaring `tasks`, which replace any of the same name, every project's or a plugin's:
 
 ```kotlin
 project = Project(name = "shop", version = "1.2.0")
 
-tasks = standardTasks + [
+tasks = [
   Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
   Task("lint", "Looks at the code", partOf = ["check"], action = build -> println("  looks fine")),
 ]
@@ -100,33 +105,82 @@ tasks = standardTasks + [
 
 ## Plugins
 
-A plugin is a library, or a project, whose functions make tasks with kiln's library,
-`uk.m4xy.kiln`, which it depends on as `kiln()`: kiln has it, so it's never published with the
-plugin. A build script names its plugins, which it's compiled with, literally:
+A plugin is a module that follows kiln's `spec Plugin`, which says its `name()` and the
+`tasks(project)` it makes, kiln adding them to every project's. It's in a library, or a project,
+which depends on kiln's library, `uk.m4xy.kiln`, as `kiln()`: kiln has it, so it's never published
+with the plugin. `settings.fk` says what build scripts use, and a build script applies the
+plugins it wants from them:
 
 ```kotlin
-import uk.m4xy.greeting.Greetings.*
+// settings.fk
+settings = Settings(uses = [library("uk.m4xy:greeting:1.0.0")])    // or projectAt("../greeting")
+```
 
-plugins = [library("uk.m4xy:greeting:1.0.0")]    // or projectAt("../greeting")
+```kotlin
+// build.fk
+import uk.m4xy.greeting.*
 
 project = Project(name = "shop")
 
-tasks = standardTasks + [greet("hello")]
+module Howdy : Words {
+  greeting(): String = "howdy"
+}
+
+plugins = [Greetings(W = Howdy)]
 ```
+
+A plugin that can be configured is a functor, whose modules have defaults: `Greetings()` greets
+with `Hello`, and `Greetings(W = Howdy)` with what the script says. What configures it is checked
+against its spec, where it's applied, so nothing is configured by a name that's only looked up.
 
 ```kotlin
-// greeting's src/uk/m4xy/greeting/Greetings.fk; its build.fk has dependencies = [kiln()]
-import uk.m4xy.kiln.*
+// greeting's src/uk/m4xy/greeting: Words.fk, Hello.fk and Greetings.fk; its build.fk has dependencies = [kiln()]
+spec Words {
+  greeting(): String
+}
 
-module Greetings {
-  greet(greeting: String): Task = Task("greet", "Greets the project", action = build -> println(greeting))
+module Hello : Words {
+  greeting(): String = "hello"
+}
+
+module Greetings(W: Words = Hello) : Plugin {
+  name(): String = "greetings"
+  tasks(project: Project): List<Task> = [Task("greet", "Greets the project", action = build -> println(W.greeting()))]
 }
 ```
+
+Plugins add tasks, and never change each other's, so the order they're applied in doesn't matter;
+tasks run in the order `dependsOn` and `partOf` say. Two plugins can't make a task of the same
+name, nor a plugin one every project has: the script makes that task itself, in `tasks`, to say
+which it is.
 
 What kiln does for its own tasks, a plugin's can: `resolve` a project's dependencies, with others,
 `linking` compiles them, `compileProgram` and `linkProgram` make a program, `buildProgram` makes
 one only when `inputs` changed, and `rememberScope` tells editors that a folder's files see more
 libraries, as `.kiln/scopes/<name>`.
+
+## settings.fk
+
+What a build is made of, and where what it uses is from, as `settings = Settings(...)`:
+
+```kotlin
+settings = Settings(
+  // Where libraries are looked for, in the order they're tried: Local is ~/.kiln/repository, or
+  // KILN_REPOSITORY, where publishLocal publishes; At, any folder laid out as it is.
+  repositories = [At(path("../team-repository")), Local],
+  // What build scripts are compiled with, for the plugins they apply.
+  uses = [library("uk.m4xy:fk-tests-kiln:0.1.0")],
+  // The projects built with the one here: kiln build here builds each, in its folder, then this one.
+  projects = [path("runner"), path("kiln")],
+)
+```
+
+It's in a project's folder, or the nearest above it that lists it in `projects`, which share it; a
+folder it doesn't list doesn't. kiln reads it before the build script, compiled with kiln's
+library alone, as it says what the script is compiled with; it's fckt, so it's checked as the
+script is, and as a value, `settings` can't do anything but say what it is. A library is taken from
+the first repository that has it, for a project's dependencies as for what scripts use. A project
+without plugins, or libraries from anywhere but `Local`, needs none.
 
 ## Libraries and dependencies
 
@@ -166,8 +220,9 @@ module Prices {
 
 ## How it works
 
-kiln adds a `main` to the build script, which hands `project`, and `tasks` if it declares them, to
-`uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` and `ocamlopt` to a
+kiln compiles `settings.fk` with a `main` that prints what it says, and runs it; then it adds a
+`main` to the build script, which hands `project`, with the settings' repositories, and `tasks` and
+`plugins` if it declares them, to `uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` and `ocamlopt` to a
 program, `.kiln/build`, again only when the script or kiln changes, and runs it. The tasks are fckt too, in
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.

@@ -1,0 +1,9 @@
+// What a plugin gives a build: tasks, which kiln adds to every project's. A build script applies
+// one in plugins = [...], as a module that follows this, or as a functor's, given the modules that
+// configure it: plugins = [FkTests.Plugin(Reporting = Quiet)].
+spec Plugin {
+  // What kiln calls it, when it says something about its tasks.
+  name(): String
+  // The tasks it makes for project.
+  tasks(project: Project): List<Task>
+}
