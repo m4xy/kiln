@@ -28,7 +28,7 @@ module Compiling {
   }
 
   // Where kiln keeps what it's compiled: ~/.kiln/cache, or KILN_CACHE.
-  @Process cache(): Path = when (env("KILN_CACHE")) {
+  @Process internal cache(): Path = when (env("KILN_CACHE")) {
     Some(folder) -> path(folder)
     None -> path(env("HOME").getOrElse(".")).resolve(".kiln/cache")
   }
@@ -60,10 +60,16 @@ module Compiling {
     }
   }
 
-  // file to OCaml at ml, with the packages in roots and the libraries', then to a program.
-  @Building compileProgram(linking: Linking, roots: List<Path>, file: Path, ml: Path, program: Path): Unit = {
+  // What tells fckt where packages are: own, the project's folders, as the program's, and the rest of
+  // roots as other projects', whose internal declarations it doesn't see.
+  sourceArgs(own: List<Path>, roots: List<Path>): List<String> =
+    roots.flatMap { if (own.contains(it)) ["-I", it.value] else ["--other-project", it.value] }
+
+  // file to OCaml at ml, with the packages in roots, own the project's, and the libraries', then to
+  // a program.
+  @Building internal compileProgram(linking: Linking, own: List<Path>, roots: List<Path>, file: Path, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate"] + roots.flatMap { ["-I", it.value] } + interfaces(libraries))
+    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate"] + sourceArgs(own, roots) + interfaces(libraries))
     linkProgram(linking, ml, program)
   }
 
@@ -77,17 +83,17 @@ module Compiling {
 
   // packages, from roots, as a library: OCaml at ml, which is the module unit, and its interface,
   // which programs that use it are checked against, in folder interface.
-  @Building compilePackages(linking: Linking, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
-    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value] + roots.flatMap { ["-I", it.value] } + interfaces(linking.libraries) + packages)
+  @Building internal compilePackages(linking: Linking, own: List<Path>, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
+    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages)
     runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.standard.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
   }
 
   // The OCaml module a library is: uk_m4xy_json for uk.m4xy:json.
-  unitOf(group: String, name: String): String =
+  internal unitOf(group: String, name: String): String =
     "${group}_$name".replace(".", "_").replace("-", "_").lowercase()
 
   // The packages in folder and those in it, as names from root: uk.m4xy.money.
-  @FileSystem packagesIn(root: Path, folder: Path): List<String> = {
+  @FileSystem internal packagesIn(root: Path, folder: Path): List<String> = {
     children = folder.listFiles()
     own = if (folder != root && children.any { it.extension == "fk" && !it.isDirectory() }) [folder.relativeTo(root).getOrElse(folder).names.joinToString(".")] else []
     own + children.filter { it.isDirectory() }.flatMap { packagesIn(root, it) }
@@ -158,7 +164,7 @@ module Compiling {
       println("  compiling ${CoordinatesText.of(lib)}")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(standard, uses), [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
+      compilePackages(Linking(standard, uses), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
       folder.resolve("done").writeText("")
     }
     CompiledLibrary(lib, folder, unit)

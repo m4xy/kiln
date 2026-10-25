@@ -14,7 +14,7 @@ import uk.m4xy.kiln.Compiling.*
 module Builds {
   // The tasks every project has. check is what checks the project, which is nothing but the tasks
   // part of it, as a plugin's tests are; build and publishLocal check it.
-  standardTasks: List<Task> = [
+  internal standardTasks: List<Task> = [
     Task("clean", "Deletes what's been built", action = build -> build.project.output.delete()),
     Task("compile", "Compiles the program to output/bin", action = build -> compile(build.project)),
     Task("check", "Checks the project: runs the tasks part of it", action = build -> Unit),
@@ -55,7 +55,7 @@ module Builds {
   // The tasks a build has: every project's, then its plugins', then its own, own. Its own replace
   // any of the same name, so a script can change any task. A plugin's can't replace another's, or
   // one every project has: the script makes that task itself, to say which it means.
-  @Fail tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
+  @Fail internal tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
     mine = own.map { it.name }.toSet()
     // Each plugin's tasks, with the plugin.
     made = plugins.flatMap { p -> p.tasks(project).map { (p.name(), it) } }.filter { _, t -> !mine.contains(t.name) }
@@ -116,7 +116,7 @@ module Builds {
     inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
     if (project.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
-      if (!buildProgram(project, program, inputs) { ml -> compileProgram(linking, resolved.roots, project.main, ml, program) }) println("  up to date")
+      if (!buildProgram(project, program, inputs) { ml -> compileProgram(linking, project.sources, resolved.roots, project.main, ml, program) }) println("  up to date")
     } else {
       packages = project.sources.flatMap { packagesIn(it, it) }.distinct()
       if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map { it.value }.joinToString(", ")}")
@@ -127,7 +127,7 @@ module Builds {
         library.delete()
         library.makeDirs()
         unit = unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
-        compilePackages(linking, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
+        compilePackages(linking, project.sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
         stamp.writeText(inputs)
         println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
       }

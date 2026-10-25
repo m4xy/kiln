@@ -3,7 +3,7 @@ import fckt.io.Paths.*
 
 // What a project is built from as it passes to another that depends on it, which runs kiln roots in
 // its folder and reads what it prints: a line each, as of writes them, which read reads back.
-module ResolvedLines {
+internal module ResolvedLines {
   // A line for each folder its packages are in, then each library it uses.
   of(resolved: Resolved): List<String> =
     resolved.roots.map { root -> "root ${root.value}" } + resolved.libraries.map { lib -> "library ${CoordinatesText.of(lib)}" }

@@ -23,7 +23,7 @@ module SettingsLines {
       settings.projects.map { project -> "project ${project.value}" }
 
   // The settings lines say, as of wrote them, with each folder from folder, where settings.fk is.
-  read(lines: List<String>, folder: Path): Result<Settings, String> =
+  internal read(lines: List<String>, folder: Path): Result<Settings, String> =
     lines.filter { it.isNotBlank() }.foldResult(Settings(repositories = [], uses = [], projects = [])) { settings, line -> withLine(settings, line, folder) }
 
   private withLine(settings: Settings, line: String, folder: Path): Result<Settings, String> = {

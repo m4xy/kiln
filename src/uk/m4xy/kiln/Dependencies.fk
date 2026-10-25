@@ -21,7 +21,7 @@ module Dependencies {
   kiln(): Dependency = Kiln
 
   // Where kiln's library is: KILN_LIB, which kiln sets for a build script.
-  @Process kilnLibrary(): Path = when (env("KILN_LIB")) {
+  @Process internal kilnLibrary(): Path = when (env("KILN_LIB")) {
     Some(folder) -> path(folder)
     None -> fail("KILN_LIB doesn't say where kiln's library is; kiln sets it when it runs a build script")
   }
@@ -34,14 +34,14 @@ module Dependencies {
   }
 
   // Where publishLocal puts lib: its folder in the local repository, group/name/version.
-  @Process publishedAt(lib: Coordinates): Path = repository().resolve(within(lib))
+  @Process internal publishedAt(lib: Coordinates): Path = repository().resolve(within(lib))
 
   // Where lib is: its folder in the first of repositories that has it.
-  @FileSystem @Process folderOf(lib: Coordinates, repositories: List<Repository>): Option<Path> =
+  @FileSystem @Process internal folderOf(lib: Coordinates, repositories: List<Repository>): Option<Path> =
     repositories.map { folderIn(it).resolve(within(lib)) }.find { it.isDirectory() }
 
   // The folder a repository is.
-  @Process folderIn(source: Repository): Path = when (source) {
+  @Process internal folderIn(source: Repository): Path = when (source) {
     Local -> repository()
     At(folder) -> folder
   }
@@ -76,7 +76,7 @@ module Dependencies {
   }
 
   // What a published library depends on: its dependencies file, a library's coordinates a line.
-  @FileSystem @Process published(lib: Coordinates, repositories: List<Repository>): List<Dependency> = when (folderOf(lib, repositories)) {
+  @FileSystem @Process internal published(lib: Coordinates, repositories: List<Repository>): List<Dependency> = when (folderOf(lib, repositories)) {
     Some(folder) -> {
       file = folder.resolve("dependencies")
       if (file.exists()) file.readLines().filter { !it.isBlank() }.map { library(it.trim()) } else []
@@ -90,7 +90,7 @@ module Dependencies {
       .distinct()
 
   // Whether version a comes after b: 1.10.0 after 1.9.2.
-  newer(a: String, b: String): Boolean = compareVersions(a.split(".").map { it.toIntOrNone().getOrElse(0) }, b.split(".").map { it.toIntOrNone().getOrElse(0) }) > 0
+  internal newer(a: String, b: String): Boolean = compareVersions(a.split(".").map { it.toIntOrNone().getOrElse(0) }, b.split(".").map { it.toIntOrNone().getOrElse(0) }) > 0
 
   private compareVersions(a: List<Int>, b: List<Int>): Int = when (a, b) {
     ([], []) -> 0

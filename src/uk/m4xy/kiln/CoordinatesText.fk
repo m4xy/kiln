@@ -2,7 +2,7 @@
 module CoordinatesText {
   of(lib: Coordinates): String = "${lib.group}:${lib.name}:${lib.version}"
 
-  read(text: String): Result<Coordinates, String> = when (text.split(":")) {
+  internal read(text: String): Result<Coordinates, String> = when (text.split(":")) {
     [group, name, version] -> Ok(Coordinates(group, name, version))
     else -> Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not $text")
   }

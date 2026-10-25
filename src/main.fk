@@ -170,7 +170,8 @@ type Read(folder: Path, settings: Settings)
   else {
     stamp.delete()
     entry.writeText(program)
-    exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value] + roots.flatMap { ["-I", it.value] } + buildImports.flatMap { ["--import", it] })
+    // kiln's library and the plugins' are other projects: the script sees what they publish, not what's internal to them.
+    exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + buildImports.flatMap { ["--import", it] })
     if (exit.code != 0) {
       print(exit.value.replace(entry.value, name))
       exit.code
