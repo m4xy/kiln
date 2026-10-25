@@ -35,8 +35,8 @@ import uk.m4xy.fktests.api.Test
   assertEquals("> Task :compile\n  up to date\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
   // Where editors find its packages and libraries.
   paths = dir.resolve("shop/.kiln/paths").readLines()
-  assertEquals(["source src", "source ../pricing/src"], paths.filter(line -> line.startsWith("source ")))
-  assertEquals(2, paths.filter(line -> line.startsWith("library ") && line.endsWith("/interface")).size)
+  assertEquals(["source src", "source ../pricing/src"], paths.filter { it.startsWith("source ") })
+  assertEquals(2, paths.filter { it.startsWith("library ") && it.endsWith("/interface") }.size)
   // Published again, it's compiled again.
   write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n")
   assertEquals(0, kiln(units, ["publishLocal"]).code)

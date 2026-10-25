@@ -37,7 +37,7 @@ module Compiling {
     // What one fckt or OCaml compiled, another can't use, so each has its own folder.
     toolchain = cache().resolve(digest(fcktVersion() + output("ocamlopt", ["-version"])).take(16))
     standard = standardLibrary(toolchain)
-    Linking(standard, resolved.libraries.fold([], (done, lib) -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done, resolved.repositories)))
+    Linking(standard, resolved.libraries.fold([]) { done, lib -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done, resolved.repositories) })
   }
 
   // What fckt --version says, remembered for the fckt that said it, as asking means starting a JVM:
@@ -47,8 +47,8 @@ module Compiling {
     if (found.isEmpty()) fail("there's no ${compiler()} to compile with: put fckt on PATH, or say where it is with FCKT")
     program = path(realPath(found))
     // Its folder's and the folder beside it's files: an installed fckt's bin and lib.
-    near = program.parent.map(bin -> bin.listFiles() + bin.resolve("../lib").listFilesOrNone()).getOrElse([])
-    stamp = ([program] + near).map(f -> "${f.value} ${modified(f.value)}").joinToString("\n")
+    near = program.parent.map { it.listFiles() + it.resolve("../lib").listFilesOrNone() }.getOrElse([])
+    stamp = ([program] + near).map { "${it.value} ${modified(it.value)}" }.joinToString("\n")
     remembered = cache().resolve("fckt").resolve(digest(stamp).take(16))
     if (remembered.exists()) remembered.readText()
     else {
@@ -62,23 +62,23 @@ module Compiling {
   // file to OCaml at ml, with the packages in roots and the libraries', then to a program.
   @Building compileProgram(linking: Linking, roots: List<Path>, file: Path, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate"] + roots.flatMap(root -> ["-I", root.value]) + interfaces(libraries))
+    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate"] + roots.flatMap { ["-I", it.value] } + interfaces(libraries))
     linkProgram(linking, ml, program)
   }
 
   // The OCaml at ml, linked with the standard library and the libraries, to program.
   @Building linkProgram(linking: Linking, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.standard.value] + libraries.flatMap(lib -> ["-I", lib.folder.value]) +
-      ["unix.cmxa", linking.standard.resolve("fckt_std.cmx").value] + libraries.map(lib -> lib.folder.resolve("${lib.unit}.cmx").value) +
+    runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.standard.value] + libraries.flatMap { ["-I", it.folder.value] } +
+      ["unix.cmxa", linking.standard.resolve("fckt_std.cmx").value] + libraries.map { it.folder.resolve("${it.unit}.cmx").value } +
       [ml.value, "-o", program.value])
   }
 
   // packages, from roots, as a library: OCaml at ml, which is the module unit, and its interface,
   // which programs that use it are checked against, in folder interface.
   @Building compilePackages(linking: Linking, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
-    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value] + roots.flatMap(root -> ["-I", root.value]) + interfaces(linking.libraries) + packages)
-    runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.standard.value] + linking.libraries.flatMap(lib -> ["-I", lib.folder.value]) + [ml.value])
+    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value] + roots.flatMap { ["-I", it.value] } + interfaces(linking.libraries) + packages)
+    runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.standard.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
   }
 
   // The OCaml module a library is: uk_m4xy_json for uk.m4xy:json.
@@ -88,18 +88,18 @@ module Compiling {
   // The packages in folder and those in it, as names from root: uk.m4xy.money.
   @FileSystem packagesIn(root: Path, folder: Path): List<String> = {
     children = folder.listFiles()
-    own = if (folder != root && children.any(f -> f.extension == "fk" && !f.isDirectory())) [folder.relativeTo(root).getOrElse(folder).names.joinToString(".")] else []
-    own + children.filter(f -> f.isDirectory()).flatMap(f -> packagesIn(root, f))
+    own = if (folder != root && children.any { it.extension == "fk" && !it.isDirectory() }) [folder.relativeTo(root).getOrElse(folder).names.joinToString(".")] else []
+    own + children.filter { it.isDirectory() }.flatMap { packagesIn(root, it) }
   }
 
   // What a program or library compiled with linking from roots, and files beside, is compiled
   // from, as a digest: fckt and OCaml, the libraries, and each source file's name and text. Where
   // it's what it was, what was compiled then is what would be now.
   @FileSystem inputs(linking: Linking, roots: List<Path>, files: List<Path>): String =
-    digest(([linking.standard.value] + linking.libraries.map(lib -> lib.folder.value) +
-      (roots.flatMap(root -> sourcesIn(root)) + files).map(f -> "${f.value}\n${f.readText()}")).joinToString("\n"))
+    digest(([linking.standard.value] + linking.libraries.map { it.folder.value } +
+      (roots.flatMap { sourcesIn(it) } + files).map { "${it.value}\n${it.readText()}" }).joinToString("\n"))
 
-  interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap(lib -> ["-L", lib.folder.resolve("interface").value])
+  interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap { ["-L", it.folder.resolve("interface").value] }
 
   // The standard library, compiled once: fckt_std, in toolchain's std.
   @Building private standardLibrary(toolchain: Path): Path = {
@@ -119,23 +119,25 @@ module Compiling {
   // done, with lib compiled after the libraries it uses, unless it is already. Of those chosen,
   // the versions it uses; through, the libraries that led to it, which it can't use in turn.
   @Building private compileLibrary(toolchain: Path, standard: Path, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>, repositories: List<Repository>): List<CompiledLibrary> =
-    if (done.any(c -> c.coordinates == lib)) done
+    if (done.any { it.coordinates == lib }) done
     else {
-      if (through.contains(lib)) fail("${(through + [lib]).map(c -> CoordinatesText.of(c)).joinToString(" uses ")}, so none can be compiled first")
+      if (through.contains(lib)) fail("${(through + [lib]).map { CoordinatesText.of(it) }.joinToString(" uses ")}, so none can be compiled first")
       uses = usedBy(lib, chosen, repositories)
-      before = uses.fold(done, (all, used) -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all, repositories))
+      before = uses.fold(done) { all, used -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all, repositories) }
       // What it uses, and what they do: their interfaces' types are its interface's.
       needed = closure(uses, chosen, [], repositories)
-      before + [compileOne(toolchain, standard, lib, before.filter(c -> needed.contains(c.coordinates)), repositories)]
+      before + [compileOne(toolchain, standard, lib, before.filter { needed.contains(it.coordinates) }, repositories)]
     }
 
   // Of those chosen, the versions of the libraries lib says it uses.
   @FileSystem @Process private usedBy(lib: Coordinates, chosen: List<Coordinates>, repositories: List<Repository>): List<Coordinates> =
-    published(lib, repositories).flatMap(d -> when (d) {
-      Library(wanted) -> chosen.filter(c -> c.group == wanted.group && c.name == wanted.name)
-      Folder(_) -> []
-      Kiln -> []
-    })
+    published(lib, repositories).flatMap { d ->
+      when (d) {
+        Library(wanted) -> chosen.filter { it.group == wanted.group && it.name == wanted.name }
+        Folder(_) -> []
+        Kiln -> []
+      }
+    }
 
   // libs, with those they use, and those they use.
   @FileSystem @Process private closure(libs: List<Coordinates>, chosen: List<Coordinates>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (libs) {
@@ -147,8 +149,8 @@ module Compiling {
   // with, and each set of those, so publishing it again compiles it again.
   @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
     src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
-    files = sourcesIn(src).map(f -> "${f.relativeTo(src).getOrElse(f).value}\n${f.readText()}")
-    key = digest(([CoordinatesText.of(lib)] + files + uses.map(u -> u.folder.name)).joinToString("\n")).take(12)
+    files = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }
+    key = digest(([CoordinatesText.of(lib)] + files + uses.map { it.folder.name }).joinToString("\n")).take(12)
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")
     unit = unitOf(lib.group, lib.name)
     if (!folder.resolve("done").exists()) {
@@ -164,7 +166,7 @@ module Compiling {
   // The .fk files in folder and those in it.
   @FileSystem private sourcesIn(folder: Path): List<Path> =
     if (!folder.isDirectory()) []
-    else folder.listFiles().flatMap(f -> if (f.isDirectory()) sourcesIn(f) else if (f.extension == "fk") [f] else [])
+    else folder.listFiles().flatMap { f -> if (f.isDirectory()) sourcesIn(f) else if (f.extension == "fk") [f] else [] }
 
   // The folder's files, or none if it isn't one.
   @FileSystem private Path.listFilesOrNone(): List<Path> = if (this.isDirectory()) this.listFiles() else []

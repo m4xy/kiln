@@ -38,7 +38,7 @@ module Dependencies {
 
   // Where lib is: its folder in the first of repositories that has it.
   @FileSystem @Process folderOf(lib: Coordinates, repositories: List<Repository>): Option<Path> =
-    repositories.map(r -> folderIn(r).resolve(within(lib))).find(folder -> folder.isDirectory())
+    repositories.map { folderIn(it).resolve(within(lib)) }.find { it.isDirectory() }
 
   // The folder a repository is.
   @Process folderIn(source: Repository): Path = when (source) {
@@ -52,10 +52,10 @@ module Dependencies {
   // projects', each once; and the libraries it uses, with theirs and its folder projects'. Where two
   // ask for a library in different versions, the higher is used.
   @FileSystem @Process resolve(project: Project): Resolved = {
-    found = folders(project.dependencies).map(folder -> folderResolved(folder))
+    found = folders(project.dependencies).map { folderResolved(it) }
     Resolved(
-      (project.sources + found.flatMap(r -> r.roots) + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
-      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap(r -> r.libraries)),
+      (project.sources + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
+      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
       project.repositories,
     )
   }
@@ -67,7 +67,7 @@ module Dependencies {
       if (found.contains(lib)) libraries(rest, found, repositories)
       else {
         if (folderOf(lib, repositories).isNone()) {
-          fail("there's no ${CoordinatesText.of(lib)} in ${repositories.map(r -> folderIn(r).value).joinToString(" or ")}: run kiln publishLocal in its project")
+          fail("there's no ${CoordinatesText.of(lib)} in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
         }
         libraries(rest + published(lib, repositories), found + [lib], repositories)
       }
@@ -79,18 +79,18 @@ module Dependencies {
   @FileSystem @Process published(lib: Coordinates, repositories: List<Repository>): List<Dependency> = when (folderOf(lib, repositories)) {
     Some(folder) -> {
       file = folder.resolve("dependencies")
-      if (file.exists()) file.readLines().filter(line -> !line.isBlank()).map(line -> library(line.trim())) else []
+      if (file.exists()) file.readLines().filter { !it.isBlank() }.map { library(it.trim()) } else []
     }
     None -> []
   }
 
   // Of each library, the highest version asked for.
   private chosen(libs: List<Coordinates>): List<Coordinates> =
-    libs.filter(lib -> !libs.any(other -> other.group == lib.group && other.name == lib.name && newer(other.version, lib.version)))
+    libs.filter { lib -> !libs.any { other -> other.group == lib.group && other.name == lib.name && newer(other.version, lib.version) } }
       .distinct()
 
   // Whether version a comes after b: 1.10.0 after 1.9.2.
-  newer(a: String, b: String): Boolean = compareVersions(a.split(".").map(n -> n.toIntOrNone().getOrElse(0)), b.split(".").map(n -> n.toIntOrNone().getOrElse(0))) > 0
+  newer(a: String, b: String): Boolean = compareVersions(a.split(".").map { it.toIntOrNone().getOrElse(0) }, b.split(".").map { it.toIntOrNone().getOrElse(0) }) > 0
 
   private compareVersions(a: List<Int>, b: List<Int>): Int = when (a, b) {
     ([], []) -> 0
@@ -99,11 +99,13 @@ module Dependencies {
     ([x, *xs], [y, *ys]) -> if (x != y) x - y else compareVersions(xs, ys)
   }
 
-  private folders(dependencies: List<Dependency>): List<Path> = dependencies.flatMap(d -> when (d) {
-    Folder(path) -> [path]
-    Library(_) -> []
-    Kiln -> []
-  })
+  private folders(dependencies: List<Dependency>): List<Path> = dependencies.flatMap { d ->
+    when (d) {
+      Folder(path) -> [path]
+      Library(_) -> []
+      Kiln -> []
+    }
+  }
 
   // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints
   // them as ResolvedLines writes them.

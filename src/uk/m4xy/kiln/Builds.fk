@@ -28,8 +28,8 @@ module Builds {
   // each, as Build's args, for run. The tasks are every project's, plugins', and tasks, the
   // script's own.
   @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = []): Unit = {
-    names = args.takeWhile(a -> a != "--")
-    build = Build(project, args.dropWhile(a -> a != "--").drop(1))
+    names = args.takeWhile { it != "--" }
+    build = Build(project, args.dropWhile { it != "--" }.drop(1))
     result = attempt {
       tasks = tasksOf(project, tasks, plugins)
       // Only these, for another project that depends on this one.
@@ -38,11 +38,11 @@ module Builds {
       }
       else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
       else {
-        order(names, tasks, []).forEach(task -> {
+        order(names, tasks, []).forEach { task ->
           println("> Task :${task.name}")
           action = task.action
           action(build)
-        })
+        }
         println("BUILD SUCCESSFUL")
       }
     }
@@ -56,32 +56,32 @@ module Builds {
   // any of the same name, so a script can change any task. A plugin's can't replace another's, or
   // one every project has: the script makes that task itself, to say which it means.
   @Fail tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
-    mine = own.map(t -> t.name)
+    mine = own.map { it.name }
     // Each plugin's tasks, with the plugin.
-    made = plugins.flatMap(p -> p.tasks(project).map(t -> (p.name(), t))).filter((_, t) -> !mine.contains(t.name))
-    made.groupBy((_, t) -> t.name).forEach((name, makers) -> {
-      by = makers.map((plugin, _) -> plugin).joinToString(" and ")
+    made = plugins.flatMap { p -> p.tasks(project).map { (p.name(), it) } }.filter { _, t -> !mine.contains(t.name) }
+    made.groupBy { _, t -> t.name }.forEach { name, makers ->
+      by = makers.map { plugin, _ -> plugin }.joinToString(" and ")
       if (makers.size > 1) fail("plugins $by both make a task $name: make it in tasks, to say which it is")
-      if (standardTasks.any(t -> t.name == name)) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
-    })
-    standardTasks.filter(t -> !mine.contains(t.name)) + made.map((_, t) -> t) + own
+      if (standardTasks.any { it.name == name }) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
+    }
+    standardTasks.filter { !mine.contains(it.name) } + made.map { _, t -> t } + own
   }
 
   @Console private listTasks(project: Project, tasks: List<Task>): Unit = {
     println("Tasks of ${project.name} ${project.version}:")
-    tasks.forEach(task -> println("  ${task.name} - ${task.description}"))
+    tasks.forEach { println("  ${it.name} - ${it.description}") }
   }
 
   // The tasks to run for names, in order: each after what it depends on, once.
   @Fail private order(names: List<String>, tasks: List<Task>, done: List<Task>): List<Task> = when (names) {
     [] -> done
     [name, *rest] -> {
-      task = when (tasks.find(t -> t.name == name)) {
+      task = when (tasks.find { it.name == name }) {
         Some(found) -> found
         None -> fail("there's no task '$name'; kiln tasks lists them")
       }
       // What it depends on, and the tasks part of it.
-      needs = task.dependsOn + tasks.filter(t -> t.partOf.contains(task.name)).map(t -> t.name)
+      needs = task.dependsOn + tasks.filter { it.partOf.contains(task.name) }.map { it.name }
       before = if (done.contains(task)) done else order(needs, tasks, done)
       order(rest, tasks, if (before.contains(task)) before else before + [task])
     }
@@ -116,10 +116,10 @@ module Builds {
     inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
     if (project.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
-      if (!buildProgram(project, program, inputs, ml -> compileProgram(linking, resolved.roots, project.main, ml, program))) println("  up to date")
+      if (!buildProgram(project, program, inputs) { ml -> compileProgram(linking, resolved.roots, project.main, ml, program) }) println("  up to date")
     } else {
-      packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
-      if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
+      packages = project.sources.flatMap { packagesIn(it, it) }.distinct()
+      if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map { it.value }.joinToString(", ")}")
       library = project.output.resolve("library")
       stamp = library.resolve("inputs")
       if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
@@ -138,29 +138,33 @@ module Builds {
   // group/name/version, with src and a dependencies file.
   @Building private publishLocal(project: Project): Unit = {
     if (project.group.isEmpty()) fail("a library needs a group, which its packages go under: Project(group = \"uk.m4xy\", ...)")
-    project.dependencies.forEach(d -> when (d) {
-      Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
-      Library(_) -> Unit
-      Kiln -> Unit
-    })
+    project.dependencies.forEach { d ->
+      when (d) {
+        Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
+        Library(_) -> Unit
+        Kiln -> Unit
+      }
+    }
     coordinates = Coordinates(project.group, project.name, project.version)
     target = publishedAt(coordinates)
     groupPath = project.group.replace(".", "/")
     // Its packages are all its group's, so they never meet another library's.
-    project.sources.flatMap(root -> packagesIn(root, root)).forEach(p -> {
+    project.sources.flatMap { packagesIn(it, it) }.forEach { p ->
       if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
-    })
-    project.sources.forEach(root -> {
+    }
+    project.sources.forEach { root ->
       if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
-    })
+    }
     // Only once it's sure to work, what was published as this version goes.
     target.delete()
-    project.sources.forEach(root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)))
-    target.resolve("dependencies").writeText(project.dependencies.flatMap(d -> when (d) {
-      Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
-      Folder(_) -> []
-      Kiln -> []
-    }).joinToString(""))
+    project.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
+    target.resolve("dependencies").writeText(project.dependencies.flatMap { d ->
+      when (d) {
+        Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
+        Folder(_) -> []
+        Kiln -> []
+      }
+    }.joinToString(""))
     println("  published ${CoordinatesText.of(coordinates)} to ${target.value}")
   }
 
@@ -169,8 +173,8 @@ module Builds {
   @FileSystem private remember(resolved: Resolved, linking: Linking): Unit = {
     folder = path(".kiln")
     folder.makeDirs()
-    folder.resolve("paths").writeText((resolved.roots.map(root -> "source ${root.value}\n") +
-      linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
+    folder.resolve("paths").writeText((resolved.roots.map { "source ${it.value}\n" } +
+      linking.libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
   }
 
   // For editors, in .kiln/scopes/name: that files in folder see libraries too, as a plugin's tests
@@ -179,13 +183,13 @@ module Builds {
     scopes = path(".kiln/scopes")
     scopes.makeDirs()
     scopes.resolve(name).writeText((["folder ${folder.value}\n"] +
-      libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
+      libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
   }
 
   @Building private runProgram(build: Build): Unit = {
     project = build.project
     program = project.output.resolve("bin").resolve(project.name)
-    exit = streaming(program.value, build.args) { forEachLine(line -> println(line)) }
+    exit = streaming(program.value, build.args) { forEachLine { println(it) } }
     if (exit.code != 0) fail("${project.name} exited with ${exit.code}")
   }
 }
