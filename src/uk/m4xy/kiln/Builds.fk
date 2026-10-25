@@ -11,22 +11,23 @@ import uk.m4xy.kiln.Compiling.*
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
 // calls runBuild(project, args) with what follows it on the command line.
 module Builds {
-  // The tasks every project has.
+  // The tasks every project has. check is what checks the project, which is nothing but the tasks
+  // part of it, as a plugin's tests are; build and publishLocal check it.
   standardTasks: List<Task> = [
-    Task("clean", "Deletes what's been built", action = project -> project.output.delete()),
-    Task("compile", "Compiles the program to output/bin", action = compile),
-    Task("test", "Compiles and runs each test", action = test),
-    Task("build", "Compiles and tests", dependsOn = ["compile", "test"], action = project -> Unit),
-    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = project -> Unit),
-    Task("publishLocal", "Compiles and tests, then publishes it as a library to ~/.kiln/repository", dependsOn = ["compile", "test"], action = publishLocal),
-    Task("roots", "Prints the folders its packages and its folder projects' are in, and the libraries it uses", action = project -> Unit),
+    Task("clean", "Deletes what's been built", action = build -> build.project.output.delete()),
+    Task("compile", "Compiles the program to output/bin", action = build -> compile(build.project)),
+    Task("check", "Checks the project: runs the tasks part of it", action = build -> Unit),
+    Task("build", "Compiles and checks", dependsOn = ["compile", "check"], action = build -> Unit),
+    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = runProgram),
+    Task("publishLocal", "Compiles and checks, then publishes it as a library to ~/.kiln/repository", dependsOn = ["compile", "check"], action = build -> publishLocal(build.project)),
+    Task("roots", "Prints the folders its packages and its folder projects' are in, and the libraries it uses", action = build -> Unit),
   ]
 
-  // Runs the tasks args name, each after those it depends on, and once; what follows -- is the
-  // program's, for run. tasks lists them.
+  // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
+  // each, as Build's args, for run. tasks lists them.
   @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = standardTasks): Unit = {
     names = args.takeWhile(a -> a != "--")
-    programArgs = args.dropWhile(a -> a != "--").drop(1)
+    build = Build(project, args.dropWhile(a -> a != "--").drop(1))
     result = attempt {
       // Only these, for another project that depends on this one.
       if (names == ["roots"]) {
@@ -39,9 +40,7 @@ module Builds {
         order(names, tasks, []).forEach(task -> {
           println("> Task :${task.name}")
           action = task.action
-          if (task.name == "run") runProgram(project, programArgs)
-          else if (task.name == "test") runTests(project, programArgs)
-          else action(project)
+          action(build)
         })
         println("BUILD SUCCESSFUL")
       }
@@ -65,15 +64,17 @@ module Builds {
         Some(found) -> found
         None -> fail("there's no task '$name'; kiln tasks lists them")
       }
-      before = if (done.contains(task)) done else order(task.dependsOn, tasks, done)
+      // What it depends on, and the tasks part of it.
+      needs = task.dependsOn + tasks.filter(t -> t.partOf.contains(task.name)).map(t -> t.name)
+      before = if (done.contains(task)) done else order(needs, tasks, done)
       order(rest, tasks, if (before.contains(task)) before else before + [task])
     }
   }
 
-  // file.fk to OCaml, with its packages in roots, then to a program at program, linked with what
-  // linking has compiled; unless it's up to date, compiled from inputs, a digest of what it's
-  // compiled from. Whether it was compiled.
-  @Building private build(project: Project, program: Path, inputs: String, compile: @Building (Path) -> Unit): Boolean = {
+  // A program at program, which compile makes from OCaml it writes to the path it's given, unless
+  // it's up to date: compiled from inputs, a digest of what it's compiled from, as Compiling.inputs
+  // makes. Whether it was compiled.
+  @Building buildProgram(project: Project, program: Path, inputs: String, compile: @Building (Path) -> Unit): Boolean = {
     ocaml = project.output.resolve("ocaml")
     stamp = ocaml.resolve(program.name + ".inputs")
     if (program.exists() && stamp.exists() && stamp.readText() == inputs) false
@@ -99,7 +100,7 @@ module Builds {
     inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
     if (project.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
-      if (!build(project, program, inputs, ml -> compileProgram(linking, resolved.roots, project.main, ml, program))) println("  up to date")
+      if (!buildProgram(project, program, inputs, ml -> compileProgram(linking, resolved.roots, project.main, ml, program))) println("  up to date")
     } else {
       packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
       if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
@@ -117,67 +118,6 @@ module Builds {
     }
   }
 
-  @Building private test(project: Project): Unit = runTests(project, [])
-
-  // The tests: the functions marked @Test in the test folder's files, run by one program, which
-  // args, from after --, choose among; and each file there with a main, a program of its own. The
-  // other files are what they share. What passed, and would be compiled from what it was, isn't
-  // run again.
-  @Building private runTests(project: Project, args: List<String>): Unit = {
-    files = if (project.tests.isDirectory()) project.tests.listFiles().filter(f -> f.extension == "fk") else []
-    programs = files.filter(f -> hasMain(f))
-    marked = files.any(f -> !hasMain(f) && hasTests(f))
-    if (programs.isEmpty() && !marked) println("  no tests in ${project.tests.value}")
-    any = marked || !programs.isEmpty()
-    resolved = if (any) resolveTests(project, marked) else Resolved([], [])
-    linking = if (any) linking(resolved) else Linking(project.output, [])
-    if (any) rememberTests(project, linking)
-    shared = if (any) inputs(linking, resolved.roots + [project.tests], []) else ""
-    tests = project.output.resolve("tests")
-    // The functions marked @Test, whose runner says how each went; chosen ones are always run.
-    suiteFailed = if (!marked) false else {
-      program = tests.resolve("tests")
-      passed = tests.resolve("tests.passed")
-      if (args.isEmpty() && passed.exists() && passed.readText() == shared && program.exists()) {
-        println("  ${tests.resolve("tests.summary").readText()} (up to date)")
-        false
-      } else {
-        passed.delete()
-        build(project, program, shared, ml -> compileTests(linking, resolved.roots, project.tests, project.testRunner, ml, program))
-        exit = run(program.value, args)
-        lines = exit.value.trim().split("\n")
-        lines.forEach(line -> println("  $line"))
-        if (exit.code == 0 && args.isEmpty()) {
-          tests.resolve("tests.summary").writeText(lines.lastOrNull().getOrElse(""))
-          passed.writeText(shared)
-        }
-        exit.code != 0
-      }
-    }
-    failed = programs.filter(file -> {
-      program = tests.resolve(file.nameWithoutExtension)
-      passed = tests.resolve(file.nameWithoutExtension + ".passed")
-      if (passed.exists() && passed.readText() == shared && program.exists()) {
-        println("  passed ${file.name} (up to date)")
-        false
-      } else {
-        passed.delete()
-        build(project, program, shared, ml -> compileProgram(linking, resolved.roots, file, ml, program))
-        exit = run(program.value, [])
-        if (exit.code == 0) {
-          passed.writeText(shared)
-          println("  passed ${file.name}")
-        } else {
-          println("  FAILED ${file.name}\n${exit.value.trim()}")
-        }
-        exit.code != 0
-      }
-    })
-    if (suiteFailed && failed.isEmpty()) fail("tests failed")
-    if (suiteFailed) fail("tests failed, and ${failed.size} of ${programs.size} test programs")
-    if (!failed.isEmpty()) fail("${failed.size} of ${programs.size} tests failed")
-  }
-
   // Copies the packages under the group's folder, and what it depends on, to the repository:
   // group/name/version, with src and a dependencies file.
   @Building private publishLocal(project: Project): Unit = {
@@ -185,6 +125,7 @@ module Builds {
     project.dependencies.forEach(d -> when (d) {
       Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
       Library(_) -> Unit
+      Kiln -> Unit
     })
     coordinates = Coordinates(project.group, project.name, project.version)
     target = folderOf(coordinates)
@@ -202,6 +143,7 @@ module Builds {
     target.resolve("dependencies").writeText(project.dependencies.flatMap(d -> when (d) {
       Library(lib) -> ["${coordinatesText(lib)}\n"]
       Folder(_) -> []
+      Kiln -> []
     }).joinToString(""))
     println("  published ${coordinatesText(coordinates)} to ${target.value}")
   }
@@ -215,30 +157,19 @@ module Builds {
       linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
   }
 
-  // The tests' libraries, for editors, in .kiln/test-paths: the tests' folder, then each
-  // library's interface, as .kiln/paths has the project's; the runner's isn't the tests'.
-  @FileSystem private rememberTests(project: Project, linking: Linking): Unit = {
-    folder = path(".kiln")
-    folder.makeDirs()
-    runner = when (project.testRunner.uses) {
-      Library(c) -> Some(c)
-      Folder(_) -> None
-    }
-    libraries = linking.libraries.filter(lib -> Some(lib.coordinates) != runner)
-    folder.resolve("test-paths").writeText((["tests ${project.tests.value}\n"] +
+  // For editors, in .kiln/scopes/name: that files in folder see libraries too, as a plugin's tests
+  // see what they're written with, which the project's other files don't.
+  @FileSystem rememberScope(name: String, folder: Path, libraries: List<CompiledLibrary>): Unit = {
+    scopes = path(".kiln/scopes")
+    scopes.makeDirs()
+    scopes.resolve(name).writeText((["folder ${folder.value}\n"] +
       libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
   }
 
-  // Whether the file marks a function @Test, on a line of its own.
-  @FileSystem private hasTests(file: Path): Boolean = file.readLines().any(line -> line.startsWith("@Test "))
-
-  // Whether the file declares main, on a line of its own, maybe after its effects: @Console main(...).
-  @FileSystem private hasMain(file: Path): Boolean =
-    file.readLines().any(line -> line.startsWith("main(") || (line.startsWith("@") && line.contains(" main(")))
-
-  @Building private runProgram(project: Project, args: List<String>): Unit = {
+  @Building private runProgram(build: Build): Unit = {
+    project = build.project
     program = project.output.resolve("bin").resolve(project.name)
-    exit = streaming(program.value, args) { forEachLine(line -> println(line)) }
+    exit = streaming(program.value, build.args) { forEachLine(line -> println(line)) }
     if (exit.code != 0) fail("${project.name} exited with ${exit.code}")
   }
 }

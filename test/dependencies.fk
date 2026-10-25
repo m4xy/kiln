@@ -2,15 +2,15 @@ import fckt.io.FileSystem
 import fckt.io.Process
 import fckt.io.Paths.*
 import fckt.io.Files.*
+import uk.m4xy.fktests.Test
 
 // Projects use libraries published locally, and other projects straight from their folders.
-@FileSystem @Process main() = {
+@Test @FileSystem @Process librariesArePublishedAndUsed() = {
   dir = projects("dependencies")
   path("build/test-repository").delete()
   path("build/test-cache").delete()
   write(dir, "units/build.fk", "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
   write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100\n}\n")
-  write(dir, "units/test/cents.fk", "import uk.m4xy.units.Cents\nmain() = assertEquals(200, Cents.of(2))\n")
   write(dir, "money/build.fk", "project = Project(name = \"money\", group = \"uk.m4xy\", version = \"2.1.0\", dependencies = [library(\"uk.m4xy:units:1.0.0\")])\n")
   write(dir, "money/src/uk/m4xy/money/Money.fk", "import uk.m4xy.units.Cents\n\nmodule Money {\n  format(pounds: Int): String = \"\${Cents.of(pounds)}p\"\n}\n")
   write(dir, "pricing/build.fk", "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\")])\n")
@@ -21,8 +21,8 @@ import fckt.io.Files.*
   money = dir.resolve("money")
   // Nothing's published yet.
   expectContains(kiln(dir.resolve("shop"), ["run"]).value, "there's no uk.m4xy:money:2.1.0 in")
-  // A library is checked, tested and copied: only what's under its group.
-  expectContains(kiln(units, ["publishLocal"]).value, "  passed cents.fk\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0")
+  // A library is compiled, checked and copied: only what's under its group.
+  expectContains(kiln(units, ["publishLocal"]).value, "> Task :check\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0")
   assertEquals(0, kiln(money, ["publishLocal"]).code)
   // publishLocal compiled it, so it's up to date.
   expectContains(kiln(money, ["compile"]).value, "> Task :compile\n  up to date\n")

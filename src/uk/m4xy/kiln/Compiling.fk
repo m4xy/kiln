@@ -66,15 +66,8 @@ module Compiling {
     linkProgram(linking, ml, program)
   }
 
-  // The tests in folder, its functions marked as runner says, to OCaml at ml, then to a program
-  // that runs them with runner, with the packages in roots and the libraries'.
-  @Building compileTests(linking: Linking, roots: List<Path>, folder: Path, runner: TestRunner, ml: Path, program: Path): Unit = {
-    runOrFail(compiler(), ["--test", folder.value, "--marker", runner.marker, "--runner", runner.runner, "-o", ml.value, "--separate"] + roots.flatMap(root -> ["-I", root.value]) + interfaces(linking.libraries))
-    linkProgram(linking, ml, program)
-  }
-
   // The OCaml at ml, linked with the standard library and the libraries, to program.
-  @Building private linkProgram(linking: Linking, ml: Path, program: Path): Unit = {
+  @Building linkProgram(linking: Linking, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
     runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.standard.value] + libraries.flatMap(lib -> ["-I", lib.folder.value]) +
       ["unix.cmxa", linking.standard.resolve("fckt_std.cmx").value] + libraries.map(lib -> lib.folder.resolve("${lib.unit}.cmx").value) +
@@ -106,7 +99,7 @@ module Compiling {
     digest(([linking.standard.value] + linking.libraries.map(lib -> lib.folder.value) +
       (roots.flatMap(root -> sourcesIn(root)) + files).map(f -> "${f.value}\n${f.readText()}")).joinToString("\n"))
 
-  private interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap(lib -> ["-L", lib.folder.resolve("interface").value])
+  interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap(lib -> ["-L", lib.folder.resolve("interface").value])
 
   // The standard library, compiled once: fckt_std, in toolchain's std.
   @Building private standardLibrary(toolchain: Path): Path = {
@@ -141,6 +134,7 @@ module Compiling {
     published(lib).flatMap(d -> when (d) {
       Library(wanted) -> chosen.filter(c -> c.group == wanted.group && c.name == wanted.name)
       Folder(_) -> []
+      Kiln -> []
     })
 
   // libs, with those they use, and those they use.

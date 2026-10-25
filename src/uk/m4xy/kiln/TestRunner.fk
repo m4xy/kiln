@@ -1,4 +1,0 @@
-// What runs a project's functions marked @Test, apart from what they're written with: the library
-// with the runner, which only the program made from the tests uses; the module that runs them; and
-// the annotation that marks a test, from the library the tests are written with.
-type TestRunner(uses: Dependency, runner: String, marker: String)

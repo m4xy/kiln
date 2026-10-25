@@ -1,13 +1,20 @@
 # kiln
 
-kiln builds [fckt](https://github.com/m4xy/fckt) projects: it compiles them, tests them, runs
-them, and publishes them as libraries for other projects to use. It's written in fckt, and builds
-itself.
+kiln builds [fckt](https://github.com/m4xy/fckt) projects: it compiles them, runs them, checks
+them, and publishes them as libraries for other projects to use. What it does is tasks; plugins
+bring more, as [fk-tests](https://github.com/m4xy/fk-tests) brings tests. It's written in fckt, and
+builds itself.
 
 A project is a folder with a `build.fk`, which says what the project is, in fckt:
 
 ```kotlin
-project = Project(name = "shop", testDependencies = [library("uk.m4xy:fk-tests:0.1.0")])
+import uk.m4xy.fktestskiln.FkTests.*
+
+plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")]
+
+project = Project(name = "shop")
+
+tasks = standardTasks + [fkTests()]
 ```
 
 ```
@@ -18,6 +25,7 @@ $ kiln build
     passed sumsItems
     passed emptyIsZero
   2 passed, 0 failed
+> Task :check
 > Task :build
 BUILD SUCCESSFUL
 $ kiln run -- a b
@@ -26,7 +34,8 @@ $ kiln run -- a b
 ## Installing
 
 kiln needs [fckt](https://github.com/m4xy/fckt) and OCaml 5.1 or newer, with
-`ocamlopt`. The first time, `bootstrap.sh` builds kiln with fckt and has it install itself:
+`ocamlopt`. The first time, `bootstrap.sh` builds kiln with fckt, publishes fk-tests, whose plugin
+kiln's own build uses, and has kiln install itself:
 
 ```sh
 FCKT=/path/to/fckt ./bootstrap.sh    # FCKT if fckt isn't on PATH
@@ -39,25 +48,21 @@ It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in 
 ## Tasks
 
 `kiln build`, run in a project's folder, compiles `src/main.fk` and the packages in `src` to
-`build/bin/<name>`, then runs the tests in `test`, any of which failing fails the build: the
-functions marked `@Test` there, which fckt compiles to one program that runs each on its own, and
-each file with a `main`, a program of its own. What tests are written with is a test dependency,
-which only the tests see: `testDependencies = [library("uk.m4xy:fk-tests:0.1.0")]`. What runs
-them is apart, and kiln adds it: [fk-tests](https://github.com/m4xy/fk-tests)'s runner, unless
-`testRunner` says another. `kiln test -- sumsItems` runs just the tests named,
-by name, file or both, as `prices.sumsItems`. Several tasks run in turn, each once and after the tasks it depends on: `kiln clean build`.
-`kiln -C dir build` builds the project in `dir`. What's up to date isn't done again: a program
-whose sources, libraries, fckt and OCaml are what they were isn't compiled again, and a test that
-passed with them isn't run again; `kiln clean` forgets.
+`build/bin/<name>`, then checks the project: runs the tasks part of `check`, any of which failing
+fails the build. kiln has none of its own; a plugin's are, as fk-tests' `test` is. Several tasks
+run in turn, each once and after the tasks it depends on: `kiln clean build`. What follows `--`
+goes to them, as to the program for `run`. `kiln -C dir build` builds the project in `dir`. What's
+up to date isn't done again: a program whose sources, libraries, fckt and OCaml are what they were
+isn't compiled again; `kiln clean` forgets.
 
 | Task | |
 | --- | --- |
 | `compile` | Compiles the program to `build/bin/<name>`; a library, which has no `src/main.fk`, is compiled as a library, to `build/library` |
-| `test` | Runs the tests in `test`: its functions marked `@Test`, and each file there with a `main`; the others are what they share. What follows `--` chooses which `@Test`s run |
-| `build` | `compile`, then `test` |
+| `check` | Checks the project: runs the tasks part of it, as a plugin's tests are |
+| `build` | `compile`, then `check` |
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
-| `publishLocal` | Compiles and tests, then publishes the project as a library to the local repository |
+| `publishLocal` | Compiles and checks, then publishes the project as a library to the local repository |
 | `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses |
 | `tasks` | Lists the tasks |
 
@@ -75,32 +80,58 @@ project = Project(
   dependencies = [],              // library("uk.m4xy:json:1.2.0"), projectAt("../pricing")
   main = path("src/main.fk"),
   sources = [path("src")],
-  tests = path("test"),
-  testDependencies = [],          // what only the tests use: library("uk.m4xy:fk-tests:0.1.0")
-  testRunner = TestRunner(         // what runs the functions marked @Test
-    library("uk.m4xy:fk-tests-runner:0.1.0"),
-    runner = "uk.m4xy.fktestsrunner.Testing",
-    marker = "uk.m4xy.fktests.Test",
-  ),
   output = path("build"),
 )
 ```
 
-A task is a `Task(name, description, dependsOn, action)`, whose action is fckt that may print, use
-files and run programs (`@Building`). A build script adds its own by declaring `tasks`:
+A task is a `Task(name, description, dependsOn, partOf, action)`, whose action is fckt that may
+print, use files and run programs (`@Building`), given the `Build`: the project, and what follows
+`--`. A task `partOf` another runs before it, as if that depended on it. A build script adds its
+own by declaring `tasks`:
 
 ```kotlin
 project = Project(name = "shop", version = "1.2.0")
 
 tasks = standardTasks + [
-  Task("stamp", "Writes the version", dependsOn = ["compile"], action = p -> p.output.resolve("VERSION").writeText(p.version)),
+  Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
+  Task("lint", "Looks at the code", partOf = ["check"], action = build -> println("  looks fine")),
 ]
 ```
+
+## Plugins
+
+A plugin is a library, or a project, whose functions make tasks with kiln's library,
+`uk.m4xy.kiln`, which it depends on as `kiln()`: kiln has it, so it's never published with the
+plugin. A build script names its plugins, which it's compiled with, literally:
+
+```kotlin
+import uk.m4xy.greeting.Greetings.*
+
+plugins = [library("uk.m4xy:greeting:1.0.0")]    // or projectAt("../greeting")
+
+project = Project(name = "shop")
+
+tasks = standardTasks + [greet("hello")]
+```
+
+```kotlin
+// greeting's src/uk/m4xy/greeting/Greetings.fk; its build.fk has dependencies = [kiln()]
+import uk.m4xy.kiln.*
+
+module Greetings {
+  greet(greeting: String): Task = Task("greet", "Greets the project", action = build -> println(greeting))
+}
+```
+
+What kiln does for its own tasks, a plugin's can: `resolve` a project's dependencies, with others,
+`linking` compiles them, `compileProgram` and `linkProgram` make a program, `buildProgram` makes
+one only when `inputs` changed, and `rememberScope` tells editors that a folder's files see more
+libraries, as `.kiln/scopes/<name>`.
 
 ## Libraries and dependencies
 
 A library is a project with a `group`, a reversed domain it owns, and its packages in a folder of
-that name, so two libraries' packages never meet. `kiln publishLocal` compiles and tests it, then
+that name, so two libraries' packages never meet. `kiln publishLocal` compiles and checks it, then
 copies its packages to the local repository, `~/.kiln/repository/<group>/<name>/<version>`, with a
 list of what it depends on. A package outside its group, or a dependency on a folder project, which
 might change under it, stops it.
@@ -157,5 +188,5 @@ project's source folders and its libraries' interfaces, where fckt's IntelliJ pl
 | `KILN_REPOSITORY` | The local repository, instead of `~/.kiln/repository` |
 | `KILN_CACHE` | Where compiled libraries are kept, instead of `~/.kiln/cache` |
 
-kiln's own tests, in `test`, build projects in `build/test-projects` with the kiln just built, with
-a repository and a cache of their own.
+kiln's own tests, in `test`, are fk-tests', which build projects in `build/test-projects` with the
+kiln just built, with a repository and a cache of their own.

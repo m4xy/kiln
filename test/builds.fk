@@ -2,82 +2,83 @@ import fckt.io.FileSystem
 import fckt.io.Process
 import fckt.io.Paths.*
 import fckt.io.Files.*
+import uk.m4xy.fktests.Test
 
-// A project builds, tests and runs, with tasks of its own.
-@FileSystem @Process main() = {
+prices = "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n"
+
+// A project compiles and runs, with tasks of its own, each run once, after what it depends on.
+@Test @FileSystem @Process tasksRunAfterWhatTheyDependOn() = {
   shop = projects("shop")
-  write(shop, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n")
+  write(shop, "src/pricing/Prices.fk", prices)
   write(shop, "src/main.fk", "import pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
-  write(shop, "test/prices.fk", "import pricing.Prices\n\nmain() = assertEquals(6, Prices.total([1, 2, 3]))\n")
   write(shop, "build.fk", """project = Project(name = "shop", version = "1.2.0")
 
 tasks = standardTasks + [
-  Task("stamp", "Writes the version", dependsOn = ["compile"], action = p -> p.output.resolve("VERSION").writeText(p.version)),
+  Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
 ]
 """)
   expectContains(kiln(shop, ["tasks"]).value, "  stamp - Writes the version")
-  assertEquals("> Task :compile\n> Task :test\n  passed prices.fk\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
-  // What's up to date isn't compiled again, and a test that passed isn't run again.
+  assertEquals("> Task :compile\n> Task :check\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
+  // What's up to date isn't compiled again; what follows -- is the tasks', as the program's for run.
   assertEquals("> Task :compile\n  up to date\n> Task :run\ntotal 6 for a b\n> Task :stamp\nBUILD SUCCESSFUL\n", kiln(shop, ["run", "stamp", "--", "a", "b"]).value)
-  assertEquals("> Task :compile\n  up to date\n> Task :test\n  passed prices.fk (up to date)\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
-  // A change to what they're compiled from compiles and runs them again.
-  write(shop, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.fold(0, (a, b) -> a + b)\n}\n")
-  assertEquals("> Task :compile\n> Task :test\n  passed prices.fk\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
   assertEquals("1.2.0", shop.resolve("build/VERSION").readText())
-  // A failing test fails the build.
-  write(shop, "test/broken.fk", "main() = assertEquals(1, 2)\n")
-  failed = kiln(shop, ["test"])
+  // A change to what it's compiled from compiles it again.
+  write(shop, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.fold(0, (a, b) -> a + b)\n}\n")
+  assertEquals("> Task :compile\n> Task :check\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
+}
+
+// A task part of check runs when check does, and so when build does; one that fails fails the build.
+@Test @FileSystem @Process aTaskPartOfCheckRunsWithIt() = {
+  lint = projects("lint")
+  write(lint, "src/pricing/Prices.fk", prices)
+  write(lint, "build.fk", """project = Project(name = "lint")
+
+tasks = standardTasks + [
+  Task("lint", "Looks at the code", partOf = ["check"], action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine")),
+]
+""")
+  assertEquals("> Task :compile\n  checked 1 package: pricing\n> Task :lint\n  looks fine\n> Task :check\n> Task :build\nBUILD SUCCESSFUL\n", kiln(lint, ["build"]).value)
+  failed = kiln(lint, ["check", "--", "strict"])
   assertEquals(1, failed.code)
-  expectContains(failed.value, "  FAILED broken.fk")
-  expectContains(failed.value, "BUILD FAILED: 1 of 2 tests failed")
-  // Functions marked @Test are run by one program, each on its own, by a runner apart from what
-  // they're written with; only the tests see either, and they can't use the runner. What follows --
-  // chooses which run.
-  checks = projects("checks")
-  write(checks, "src/uk/m4xy/checks/Test.fk", "annotation type Test\n")
-  write(checks, "src/uk/m4xy/runs/Runner.fk", """module Runner {
-  type Outcome { Passed, Failed, Skipped }
-  @Console section(args: List<String>, file: String, names: List<String>): Unit = println(file)
-  @Console check(args: List<String>, file: String, name: String, body: @Fail () -> Unit): Outcome =
-    if (!args.isEmpty() && !args.contains(name)) Skipped
-    else when (attempt { body() }) {
-      Ok(_) -> {
-        println("  passed " + name)
-        Passed
-      }
-      Error(reason) -> {
-        println("  FAILED " + name + ": " + reason)
-        Failed
-      }
-    }
-  @Console finish(outcomes: List<Outcome>): Unit = {
-    failed = outcomes.filter(o -> o == Failed).size
-    println(outcomes.filter(o -> o == Passed).size.toString() + " passed")
-    if (failed > 0) stop(1)
-  }
-  private external stop(code: Int): Unit = "exit code"
+  expectContains(failed.value, "> Task :lint\nBUILD FAILED: too loose")
+}
+
+// A plugin is a library, or a project, whose functions make tasks with kiln's library.
+@Test @FileSystem @Process aPluginMakesTasks() = {
+  dir = projects("plugins")
+  write(dir, "greeting/build.fk", "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
+  write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import uk.m4xy.kiln.*
+
+module Greetings {
+  greet(greeting: String): Task = Task("greet", "Greets the project", action = build -> println("  " + greeting + ", " + build.project.name))
 }
 """)
-  write(checks, "build.fk", "project = Project(name = \"checks\", group = \"uk.m4xy\")\n")
-  till = projects("till")
-  write(till, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n")
-  write(till, "test/prices.fk", "import uk.m4xy.checks.Test\nimport pricing.Prices\n\n@Test sums() = assert(Prices.total([1, 2, 3]) == 6)\n@Test empty() = assert(Prices.total([]) == 0)\n")
-  write(till, "build.fk", "project = Project(\n  name = \"till\",\n  testDependencies = [projectAt(\"../checks\")],\n  testRunner = TestRunner(projectAt(\"../checks\"), runner = \"uk.m4xy.runs.Runner\", marker = \"uk.m4xy.checks.Test\"),\n)\n")
-  assertEquals("> Task :test\n  prices.fk\n    passed sums\n    passed empty\n  2 passed\nBUILD SUCCESSFUL\n", kiln(till, ["test"]).value)
-  assertEquals("> Task :test\n  2 passed (up to date)\nBUILD SUCCESSFUL\n", kiln(till, ["test"]).value)
-  assertEquals("> Task :test\n  prices.fk\n    passed empty\n  1 passed\nBUILD SUCCESSFUL\n", kiln(till, ["test", "--", "empty"]).value)
-  write(till, "test/wrong.fk", "import uk.m4xy.checks.Test\n\n@Fail @Test adds() = fail(\"wrong\")\n")
-  wrong = kiln(till, ["test"])
-  assertEquals(1, wrong.code)
-  expectContains(wrong.value, "    FAILED adds: wrong\n  2 passed\n")
-  expectContains(wrong.value, "BUILD FAILED: tests failed")
-  expectContains(till.resolve(".kiln/test-paths").readText(), "tests test\n")
-  write(till, "test/wrong.fk", "import uk.m4xy.checks.Test\nimport uk.m4xy.runs.Runner\n\n@Test adds() = Unit\n")
-  expectContains(kiln(till, ["test"]).value, "uk.m4xy.runs runs the tests, so they can't use it")
-  // The program doesn't see what only its tests use.
-  write(till, "src/main.fk", "import uk.m4xy.checks.Test\n\nmain() = println(\"till\")\n")
-  expectContains(kiln(till, ["compile"]).value, "uk.m4xy.checks")
-  // What isn't a project, or a task, says so.
+  write(dir, "shop/src/pricing/Prices.fk", prices)
+  shop = dir.resolve("shop")
+  build = (plugin: String) -> write(shop, "build.fk", """import uk.m4xy.greeting.Greetings.*
+
+plugins = [$plugin]
+
+project = Project(name = "shop")
+
+tasks = standardTasks + [greet("hello")]
+""")
+  build("projectAt(\"../greeting\")")
+  assertEquals("> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  // Published, it's used from the repository.
+  build("library(\"uk.m4xy:greeting:1.0.0\")")
+  expectContains(kiln(shop, ["greet"]).value, "build.fk: its plugin uk.m4xy:greeting:1.0.0 isn't in")
+  assertEquals(0, kiln(dir.resolve("greeting"), ["publishLocal"]).code)
+  assertEquals("> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  // kiln's library isn't published with it, as kiln has it.
+  assertEquals("", path("build/test-repository/uk.m4xy/greeting/1.0.0/dependencies").readText())
+}
+
+// What isn't a project, or a task, says so.
+@Test @FileSystem @Process whatIsntAProjectSaysSo() = {
+  shop = projects("nothing")
+  write(shop, "src/pricing/Prices.fk", prices)
+  write(shop, "build.fk", "project = Project(name = \"nothing\")\n")
   assertEquals(2, kiln(shop.resolve("src"), ["build"]).code)
   expectContains(kiln(shop, ["nope"]).value, "BUILD FAILED: there's no task 'nope'")
 }

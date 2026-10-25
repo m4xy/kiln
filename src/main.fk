@@ -7,7 +7,9 @@ import fckt.io.Processes.*
 
 // kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. It adds a
 // main to the build script, which hands project to uk.m4xy.kiln's runBuild, compiles that with
-// fckt and ocamlopt to .kiln/build, again only when it changes, and runs it.
+// fckt and ocamlopt to .kiln/build, again only when it changes, and runs it. A build script's
+// plugins, plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")], are libraries it's compiled with,
+// whose functions make tasks.
 
 version = "0.1.0"
 
@@ -15,8 +17,9 @@ usage = """usage: kiln [-C <dir>] <task>... [-- <args>]
 
 Builds the fckt project whose build.fk is in this folder, or with -C, in dir: kiln build, test,
 run, clean, compile, publishLocal, roots, or tasks to list them. build.fk declares project =
-Project(name = "..."), and may declare tasks = standardTasks + [Task(...)]; what follows -- goes
-to the program, for run. FCKT says where fckt is, if the shell can't find it."""
+Project(name = "..."), and may declare tasks = standardTasks + [Task(...)], and plugins = [...],
+the libraries or projects whose tasks it uses; what follows -- goes to the tasks, as to the program
+for run. FCKT says where fckt is, if the shell can't find it."""
 
 // What a build script imports without saying: what it needs to say what its project is.
 buildImports = [
@@ -62,6 +65,7 @@ buildImports = [
       1
     } else {
       tasks = if (declares("tasks")) ", tasks" else ""
+      plugins = pluginRoots(plugins(lines))
       cache = path(".kiln")
       cache.makeDirs()
       entry = cache.resolve("main.fk")
@@ -73,12 +77,13 @@ buildImports = [
       program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args$tasks)\n"
       // Compiled again, to a program, when the script, or kiln or its library, changes: running
       // the OCaml as a script would type-check all of it every time.
-      key = "kiln $version\n$program\n${sources(library()).map(f -> f.readText()).joinToString("\n")}"
+      key = "kiln $version\n$program\n${([library()] + plugins).flatMap(sources).map(f -> f.readText()).joinToString("\n")}"
       fresh = built.exists() && stamp.exists() && stamp.readText() == key
       compiled = if (fresh) 0 else {
         stamp.delete()
         entry.writeText(program)
-        exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value, "-I", library().value] + buildImports.flatMap(i -> ["--import", i]))
+        roots = ([library()] + plugins).flatMap(root -> ["-I", root.value])
+        exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value] + roots + buildImports.flatMap(i -> ["--import", i]))
         // Its errors are build.fk's.
         if (exit.code != 0) {
           print(exit.value.split(entry.value).joinToString("build.fk"))
@@ -89,6 +94,8 @@ buildImports = [
           native.code
         }
       }
+      // A plugin's tasks use kiln's library, as kiln() says, from where this kiln has it.
+      setEnv("KILN_LIB", library().value)
       if (compiled != 0) 1 else system(built.value, args)
     }
   }
@@ -105,6 +112,42 @@ buildImports = [
   }
 }
 
+// What plugins = [...] names, from where it starts to the ] that ends it: a library's coordinates,
+// library("g:n:v"), or a project's folder, projectAt("../plugin"), as written.
+plugins(lines: List<String>): List<String> = {
+  from = lines.dropWhile(line -> !line.startsWith("plugins ="))
+  open = from.takeWhile(line -> !line.contains("]"))
+  text = (open + from.drop(open.size).take(1)).joinToString("\n")
+  named = (call: String) -> text.split("$call(\"").drop(1).map(part -> "$call:" + part.split("\"").firstOrNone().getOrElse(""))
+  named("library") + named("projectAt")
+}
+
+// Where plugins' packages are: a library's source, in the repository, with the libraries it uses;
+// a project's src.
+@Console @FileSystem @Process pluginRoots(plugins: List<String>): List<Path> = plugins.flatMap(p ->
+  if (p.startsWith("projectAt:")) [path(p.removePrefix("projectAt:")).resolve("src")]
+  else librarySources(p.removePrefix("library:"), [])
+).distinct()
+
+@Console @FileSystem @Process librarySources(coordinates: String, seen: List<String>): List<Path> = when (coordinates.split(":")) {
+  [group, name, version] -> if (seen.contains(coordinates)) [] else {
+    folder = repository().resolve("$group/$name/$version")
+    if (!folder.isDirectory()) {
+      println("build.fk: its plugin $coordinates isn't in ${repository().value}: run kiln publishLocal in its project")
+      exit(1)
+    }
+    uses = folder.resolve("dependencies")
+    [folder.resolve("src")] + (if (uses.exists()) uses.readLines().filter(l -> !l.isBlank()) else []).flatMap(l -> librarySources(l.trim(), seen + [coordinates]))
+  }
+  else -> {
+    println("build.fk: a plugin is library(\"group:name:version\") or projectAt(\"folder\"), not $coordinates")
+    exit(1)
+  }
+}
+
+// Where published libraries are: KILN_REPOSITORY, or ~/.kiln/repository.
+@Process repository(): Path = path(env("KILN_REPOSITORY").getOrElse(env("HOME").getOrElse(".") + "/.kiln/repository"))
+
 // The .fk files in folder and those in it.
 @FileSystem sources(folder: Path): List<Path> =
   if (!folder.isDirectory()) []
@@ -115,3 +158,4 @@ private @FileSystem external changeDirectory(dir: String): Unit = "Sys.chdir dir
 // Runs command with args, with the terminal kiln has, and gives its exit code.
 private @Process external system(command: String, args: List<String>): Int = "(fun c a -> Sys.command (Filename.quote_command c a)) command args"
 private @Process external exit(code: Int): Nothing = "exit code"
+private @Process external setEnv(name: String, value: String): Unit = "Unix.putenv name value"

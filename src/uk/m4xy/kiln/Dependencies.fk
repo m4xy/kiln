@@ -16,6 +16,16 @@ module Dependencies {
   // Another project, from its folder: its packages as they are, with what it depends on.
   projectAt(folder: String): Dependency = Folder(path(folder))
 
+  // kiln's own library, uk.m4xy.kiln, for a plugin: what it makes tasks with. kiln has it, so it's
+  // never published with the plugin.
+  kiln(): Dependency = Kiln
+
+  // Where kiln's library is: KILN_LIB, which kiln sets for a build script.
+  @Process kilnLibrary(): Path = when (env("KILN_LIB")) {
+    Some(folder) -> path(folder)
+    None -> fail("KILN_LIB doesn't say where kiln's library is; kiln sets it when it runs a build script")
+  }
+
   // group:name:version.
   coordinatesText(lib: Coordinates): String = "${lib.group}:${lib.name}:${lib.version}"
 
@@ -34,15 +44,10 @@ module Dependencies {
   @FileSystem @Process resolve(project: Project): Resolved = {
     found = folders(project.dependencies).map(folder -> folderResolved(folder))
     Resolved(
-      (project.sources + found.flatMap(r -> r.roots)).distinct(),
+      (project.sources + found.flatMap(r -> r.roots) + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
       chosen(libraries(project.dependencies, []) + found.flatMap(r -> r.libraries)),
     )
   }
-
-  // What the project's tests are built from: what its programs are, its test dependencies, and,
-  // with runner, what runs its functions marked @Test.
-  @FileSystem @Process resolveTests(project: Project, runner: Boolean): Resolved =
-    resolve(project.copy(dependencies = project.dependencies + project.testDependencies + if (runner) [project.testRunner.uses] else []))
 
   // The libraries asked for, with theirs, as the repository says.
   @FileSystem @Process private libraries(wanted: List<Dependency>, found: List<Coordinates>): List<Coordinates> = when (wanted) {
@@ -54,6 +59,7 @@ module Dependencies {
         libraries(rest + published(lib), found + [lib])
       }
     [Folder(_), *rest] -> libraries(rest, found)
+    [Kiln, *rest] -> libraries(rest, found)
   }
 
   // What a published library depends on: its dependencies file, a library's coordinates a line.
@@ -80,6 +86,7 @@ module Dependencies {
   private folders(dependencies: List<Dependency>): List<Path> = dependencies.flatMap(d -> when (d) {
     Folder(path) -> [path]
     Library(_) -> []
+    Kiln -> []
   })
 
   // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints a
@@ -94,6 +101,7 @@ module Dependencies {
       lines.filter(line -> line.startsWith("library ")).flatMap(line -> when (library(line.removePrefix("library "))) {
         Library(lib) -> [lib]
         Folder(_) -> []
+        Kiln -> []
       }),
     )
   }
