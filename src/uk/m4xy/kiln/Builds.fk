@@ -59,13 +59,14 @@ module Builds {
   // one every project has: the script makes that task itself, to say which it means.
   @Fail tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
     mine = own.map(t -> t.name)
-    made = plugins.flatMap(p -> p.tasks(project)).filter(t -> !mine.contains(t.name))
-    made.forEach(task -> {
-      by = plugins.filter(p -> p.tasks(project).any(t -> t.name == task.name)).map(p -> p.name())
-      if (by.size > 1) fail("plugins ${by.joinToString(" and ")} both make a task ${task.name}: make it in tasks, to say which it is")
-      if (standardTasks.any(t -> t.name == task.name)) fail("plugin ${by.joinToString(" and ")} makes a task ${task.name}, which every project has: make it in tasks, to say which it is")
+    // Each plugin's tasks, with the plugin.
+    made = plugins.flatMap(p -> p.tasks(project).map(t -> (p.name(), t))).filter((_, t) -> !mine.contains(t.name))
+    made.groupBy((_, t) -> t.name).forEach((name, makers) -> {
+      by = makers.map((plugin, _) -> plugin).joinToString(" and ")
+      if (makers.size > 1) fail("plugins $by both make a task $name: make it in tasks, to say which it is")
+      if (standardTasks.any(t -> t.name == name)) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
     })
-    standardTasks.filter(t -> !mine.contains(t.name)) + made + own
+    standardTasks.filter(t -> !mine.contains(t.name)) + made.map((_, t) -> t) + own
   }
 
   // settings as kiln reads them before it builds, a line each, as written: the repositories, in
@@ -160,7 +161,7 @@ module Builds {
     })
     coordinates = Coordinates(project.group, project.name, project.version)
     target = publishedAt(coordinates)
-    groupPath = project.group.split(".").joinToString("/")
+    groupPath = project.group.replace(".", "/")
     // Its packages are all its group's, so they never meet another library's.
     project.sources.flatMap(root -> packagesIn(root, root)).forEach(p -> {
       if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")

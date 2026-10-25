@@ -36,7 +36,7 @@ import fckt.io.Processes.*
   script = "d=\$1; h=\$2; shift 2; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/build/test-repository\" KILN_CACHE=\"\$h/build/test-cache\" exec \"\$h/build/bin/kiln\" \"\$@\""
   exit = run("sh", ["-c", script, "sh", folder.value, home] + args)
   // The standard library is compiled once for all the tests, by whichever runs first.
-  Exit(exit.code, exit.value.split("  compiling the standard library\n").joinToString(""))
+  Exit(exit.code, exit.value.replace("  compiling the standard library\n", ""))
 }
 
 // Fails, saying what was expected and what there was, unless text contains part.

@@ -83,7 +83,7 @@ module Compiling {
 
   // The OCaml module a library is: uk_m4xy_json for uk.m4xy:json.
   unitOf(group: String, name: String): String =
-    "${group}_$name".split(".").joinToString("_").split("-").joinToString("_").lowercase()
+    "${group}_$name".replace(".", "_").replace("-", "_").lowercase()
 
   // The packages in folder and those in it, as names from root: uk.m4xy.money.
   @FileSystem packagesIn(root: Path, folder: Path): List<String> = {

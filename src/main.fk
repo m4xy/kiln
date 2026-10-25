@@ -71,7 +71,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
   })
   if (failed.isSome()) 1
   else if (path("build.fk").exists()) script(settings, args)
-  else if (!included.isEmpty()) 0
+  else if (included.isNotEmpty()) 0
   else {
     println("kiln: there's no build.fk here, so no project to build")
     2
@@ -89,7 +89,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
   } else if (!declares("project")) {
     println("build.fk: it must declare project = Project(name = \"...\")")
     1
-  } else if (declares("uses") || !listed("plugins", lines).isEmpty()) {
+  } else if (declares("uses") || listed("plugins", lines).isNotEmpty()) {
     println("build.fk: the libraries and projects it's compiled with go in settings.fk, settings = Settings(uses = [...]); plugins = [...] applies their plugins, as modules")
     1
   } else {
@@ -140,7 +140,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
     print(said.value)
     exit(1)
   }
-  out = said.value.split("\n").filter(line -> !line.isEmpty())
+  out = said.value.lines().filter(line -> line.isNotEmpty())
   saying = (what: String) -> out.filter(line -> line.startsWith("$what ")).map(line -> line.removePrefix("$what "))
   Read(
     folder,
@@ -166,7 +166,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
     entry.writeText(program)
     exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value] + roots.flatMap(root -> ["-I", root.value]) + buildImports.flatMap(i -> ["--import", i]))
     if (exit.code != 0) {
-      print(exit.value.split(entry.value).joinToString(name))
+      print(exit.value.replace(entry.value, name))
       exit.code
     } else {
       native = run("ocamlopt", ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value])
@@ -198,7 +198,7 @@ listed(name: String, lines: List<String>): List<String> = {
   from = lines.dropWhile(line -> !line.startsWith("$name ="))
   open = from.takeWhile(line -> !line.contains("]"))
   text = (open + from.drop(open.size).take(1)).joinToString("\n")
-  named = (call: String) -> text.split("$call(\"").drop(1).map(part -> "$call:" + part.split("\"").firstOrNone().getOrElse(""))
+  named = (call: String) -> text.split("$call(\"").drop(1).map(part -> "$call:" + part.substringBefore("\""))
   named("library") + named("projectAt")
 }
 
@@ -215,7 +215,7 @@ listed(name: String, lines: List<String>): List<String> = {
     when (folders.map(f -> f.resolve("$group/$name/$version")).find(f -> f.isDirectory())) {
       Some(folder) -> {
         uses = folder.resolve("dependencies")
-        [folder.resolve("src")] + (if (uses.exists()) uses.readLines().filter(l -> !l.isBlank()) else []).flatMap(l -> librarySources(l.trim(), seen + [coordinates], repositories))
+        [folder.resolve("src")] + (if (uses.exists()) uses.readLines().filter(l -> l.isNotBlank()) else []).flatMap(l -> librarySources(l.trim(), seen + [coordinates], repositories))
       }
       None -> {
         println("settings.fk: it uses $coordinates, which isn't in ${folders.map(f -> f.value).joinToString(" or ")}: run kiln publishLocal in its project")

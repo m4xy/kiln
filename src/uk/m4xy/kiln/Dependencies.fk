@@ -113,7 +113,7 @@ module Dependencies {
     if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
     exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "roots"])
     if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
-    lines = exit.value.split("\n").map(line -> line.trim()).filter(line -> !line.isEmpty())
+    lines = exit.value.lines().map(line -> line.trim()).filter(line -> line.isNotEmpty())
     Resolved(
       lines.filter(line -> !line.startsWith("library ")).map(line -> folder.resolve(line)),
       lines.filter(line -> line.startsWith("library ")).flatMap(line -> when (library(line.removePrefix("library "))) {
