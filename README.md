@@ -15,11 +15,11 @@ settings = Settings(uses = [library("uk.m4xy:fk-tests-kiln:0.1.0")])
 
 ```kotlin
 // build.fk
-import uk.m4xy.fktests.kiln.FkTests.*
+import uk.m4xy.fktests.kiln.*
 
 project = Project(name = "shop")
 
-tasks = [fkTests()]
+plugins = [FkTests()]
 ```
 
 ```

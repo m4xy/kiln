@@ -1,12 +1,12 @@
 // kiln builds itself: kiln build, then kiln install, to ~/.kiln or KILN_HOME. Its tests are
 // fk-tests', which fk-tests-kiln runs; bootstrap.sh publishes them first.
-import uk.m4xy.fktests.kiln.FkTests.*
-
+import uk.m4xy.fktests.kiln.*
 
 project = Project(name = "kiln", group = "uk.m4xy", version = "0.1.0")
 
+plugins = [FkTests()]
+
 tasks = [
-  fkTests(),
   Task("install", "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = ["compile"], action = install),
 ]
 
