@@ -66,10 +66,10 @@ module Compiling {
     linkProgram(linking, ml, program)
   }
 
-  // The tests in folder, its functions marked @Test, to OCaml at ml, then to a program that runs
-  // them with runner, with the packages in roots and the libraries'.
-  @Building compileTests(linking: Linking, roots: List<Path>, folder: Path, runner: String, ml: Path, program: Path): Unit = {
-    runOrFail(compiler(), ["--test", folder.value, "--runner", runner, "-o", ml.value, "--separate"] + roots.flatMap(root -> ["-I", root.value]) + interfaces(linking.libraries))
+  // The tests in folder, its functions marked as runner says, to OCaml at ml, then to a program
+  // that runs them with runner, with the packages in roots and the libraries'.
+  @Building compileTests(linking: Linking, roots: List<Path>, folder: Path, runner: TestRunner, ml: Path, program: Path): Unit = {
+    runOrFail(compiler(), ["--test", folder.value, "--marker", runner.marker, "--runner", runner.runner, "-o", ml.value, "--separate"] + roots.flatMap(root -> ["-I", root.value]) + interfaces(linking.libraries))
     linkProgram(linking, ml, program)
   }
 

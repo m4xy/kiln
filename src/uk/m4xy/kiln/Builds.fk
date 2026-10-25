@@ -129,7 +129,7 @@ module Builds {
     marked = files.any(f -> !hasMain(f) && hasTests(f))
     if (programs.isEmpty() && !marked) println("  no tests in ${project.tests.value}")
     any = marked || !programs.isEmpty()
-    resolved = if (any) resolveTests(project) else Resolved([], [])
+    resolved = if (any) resolveTests(project, marked) else Resolved([], [])
     linking = if (any) linking(resolved) else Linking(project.output, [])
     if (any) rememberTests(project, linking)
     shared = if (any) inputs(linking, resolved.roots + [project.tests], []) else ""
@@ -216,12 +216,17 @@ module Builds {
   }
 
   // The tests' libraries, for editors, in .kiln/test-paths: the tests' folder, then each
-  // library's interface, as .kiln/paths has the project's.
+  // library's interface, as .kiln/paths has the project's; the runner's isn't the tests'.
   @FileSystem private rememberTests(project: Project, linking: Linking): Unit = {
     folder = path(".kiln")
     folder.makeDirs()
+    runner = when (project.testRunner.uses) {
+      Library(c) -> Some(c)
+      Folder(_) -> None
+    }
+    libraries = linking.libraries.filter(lib -> Some(lib.coordinates) != runner)
     folder.resolve("test-paths").writeText((["tests ${project.tests.value}\n"] +
-      linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
+      libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
   }
 
   // Whether the file marks a function @Test, on a line of its own.

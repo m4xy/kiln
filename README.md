@@ -40,10 +40,11 @@ It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in 
 
 `kiln build`, run in a project's folder, compiles `src/main.fk` and the packages in `src` to
 `build/bin/<name>`, then runs the tests in `test`, any of which failing fails the build: the
-functions marked `@Test` there, which fckt compiles to one program that a test library's runner
-runs each on its own, and each file with a `main`, a program of its own. A test library is a test
-dependency, which only the tests see: `testDependencies = [library("uk.m4xy:fk-tests:0.1.0")]`;
-`testRunner` names another library's runner than [fk-tests](https://github.com/m4xy/fk-tests)'s. `kiln test -- sumsItems` runs just the tests named,
+functions marked `@Test` there, which fckt compiles to one program that runs each on its own, and
+each file with a `main`, a program of its own. What tests are written with is a test dependency,
+which only the tests see: `testDependencies = [library("uk.m4xy:fk-tests:0.1.0")]`. What runs
+them is apart, and kiln adds it: [fk-tests](https://github.com/m4xy/fk-tests)'s runner, unless
+`testRunner` says another. `kiln test -- sumsItems` runs just the tests named,
 by name, file or both, as `prices.sumsItems`. Several tasks run in turn, each once and after the tasks it depends on: `kiln clean build`.
 `kiln -C dir build` builds the project in `dir`. What's up to date isn't done again: a program
 whose sources, libraries, fckt and OCaml are what they were isn't compiled again, and a test that
@@ -76,7 +77,11 @@ project = Project(
   sources = [path("src")],
   tests = path("test"),
   testDependencies = [],          // what only the tests use: library("uk.m4xy:fk-tests:0.1.0")
-  testRunner = "uk.m4xy.fktests.Testing",
+  testRunner = TestRunner(         // what runs the functions marked @Test
+    library("uk.m4xy:fk-tests-runner:0.1.0"),
+    runner = "uk.m4xy.fktestsrunner.Testing",
+    marker = "uk.m4xy.fktests.Test",
+  ),
   output = path("build"),
 )
 ```

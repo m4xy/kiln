@@ -18,11 +18,15 @@ type Project(
   // The folder of its tests: its functions marked @Test, and each file there with a main, a test
   // of its own, which fails if it does.
   tests: Path = path("test"),
-  // What only its tests use, as a test library: library("uk.m4xy:fk-tests:0.1.0"). Its programs
-  // and packages don't see them.
+  // What only its tests use, as what they're written with: library("uk.m4xy:fk-tests:0.1.0"). Its
+  // programs and packages don't see them.
   testDependencies: List<Dependency> = [],
-  // The module that runs its functions marked @Test, from a test library: fk-tests's, by default.
-  testRunner: String = "uk.m4xy.fktests.Testing",
+  // What runs its functions marked @Test: fk-tests-runner, for tests written with fk-tests.
+  testRunner: TestRunner = TestRunner(
+    Library(Coordinates("uk.m4xy", "fk-tests-runner", "0.1.0")),
+    runner = "uk.m4xy.fktestsrunner.Testing",
+    marker = "uk.m4xy.fktests.Test",
+  ),
   // Where what's built goes: the program is output/bin/name.
   output: Path = path("build"),
 )
