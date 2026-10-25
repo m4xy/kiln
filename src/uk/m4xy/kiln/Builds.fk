@@ -69,20 +69,6 @@ module Builds {
     standardTasks.filter(t -> !mine.contains(t.name)) + made.map((_, t) -> t) + own
   }
 
-  // settings as kiln reads them before it builds, a line each, as written: the repositories, in
-  // order; what build scripts use; and the projects.
-  settingsLines(settings: Settings): List<String> =
-    settings.repositories.map(r -> when (r) {
-      Local -> "repository local"
-      At(folder) -> "repository at ${folder.value}"
-    }) +
-    settings.uses.flatMap(d -> when (d) {
-      Library(lib) -> ["uses library ${coordinatesText(lib)}"]
-      Folder(folder) -> ["uses project ${folder.value}"]
-      Kiln -> []
-    }) +
-    settings.projects.map(project -> "project ${project.value}")
-
   @Console private listTasks(project: Project, tasks: List<Task>): Unit = {
     println("Tasks of ${project.name} ${project.version}:")
     tasks.forEach(task -> println("  ${task.name} - ${task.description}"))

@@ -1,0 +1,50 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+
+// Settings as they pass from settings.fk to kiln, which compiles settings.fk with a main that
+// prints them and reads what it prints: a line each, of, which read reads back as they were.
+module SettingsLines {
+  // A line for each repository, in the order they're tried; each thing build scripts use; and each
+  // project, with folders as settings.fk has them.
+  of(settings: Settings): List<String> =
+    settings.repositories.map { r ->
+      when (r) {
+        Local -> "repository local"
+        At(folder) -> "repository at ${folder.value}"
+      }
+    } +
+      settings.uses.map { d ->
+        when (d) {
+          Library(lib) -> "uses library ${lib.group}:${lib.name}:${lib.version}"
+          Folder(folder) -> "uses project ${folder.value}"
+          Kiln -> "uses kiln"
+        }
+      } +
+      settings.projects.map { project -> "project ${project.value}" }
+
+  // The settings lines say, as of wrote them, with each folder from folder, where settings.fk is.
+  read(lines: List<String>, folder: Path): Result<Settings, String> =
+    lines.filter { it.isNotBlank() }.fold(Ok(Settings(repositories = [], uses = [], projects = []))) { read, line ->
+      read.flatMap { settings -> withLine(settings, line, folder) }
+    }
+
+  private withLine(settings: Settings, line: String, folder: Path): Result<Settings, String> = {
+    rest = line.substringAfter(" ")
+    when (line.substringBefore(" ")) {
+      "repository" ->
+        if (rest == "local") Ok(settings.copy(repositories = settings.repositories + [Local]))
+        else if (rest.startsWith("at ")) Ok(settings.copy(repositories = settings.repositories + [At(folder.resolve(rest.removePrefix("at ")))]))
+        else Error("a repository is local or at a folder, not $rest")
+      "uses" ->
+        if (rest == "kiln") Ok(settings.copy(uses = settings.uses + [Kiln]))
+        else if (rest.startsWith("project ")) Ok(settings.copy(uses = settings.uses + [Folder(folder.resolve(rest.removePrefix("project ")))]))
+        else if (rest.startsWith("library ")) when (rest.removePrefix("library ").split(":")) {
+          [group, name, version] -> Ok(settings.copy(uses = settings.uses + [Library(Coordinates(group, name, version))]))
+          else -> Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not ${rest.removePrefix("library ")}")
+        }
+        else Error("what build scripts use is a library, a project or kiln, not $rest")
+      "project" -> Ok(settings.copy(projects = settings.projects + [folder.resolve(rest)]))
+      else -> Error("there's no setting '$line'")
+    }
+  }
+}

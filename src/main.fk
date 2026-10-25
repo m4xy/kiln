@@ -4,6 +4,11 @@ import fckt.io.Process
 import fckt.io.Paths.*
 import fckt.io.Files.*
 import fckt.io.Processes.*
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Dependencies.folderOf
+import uk.m4xy.kiln.Dependencies.folderIn
+import uk.m4xy.kiln.Dependencies.published
+import uk.m4xy.kiln.Dependencies.coordinatesText
 
 // kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. First it
 // reads settings.fk, in this folder, or the nearest above that lists this one in its projects:
@@ -30,10 +35,8 @@ buildImports = [
   "fckt.io.Path", "fckt.io.FileSystem", "fckt.io.Process", "fckt.io.Paths.*", "fckt.io.Files.*", "fckt.io.Processes.*",
 ]
 
-// What settings.fk says, as kiln reads it, from the folder it's in: the repositories, local or a
-// folder, in the order they're tried; what build scripts use, a library's coordinates or a project's
-// folder; and the projects' folders. Folders are as settings.fk has them, from its own.
-type Read(folder: String, repositories: List<String>, uses: List<String>, projects: List<String>)
+// What settings.fk in folder says, with its folders from there.
+type Read(folder: Path, settings: Settings)
 
 @Console @FileSystem @Process main(args: List<String>) = {
   rest = when (args) {
@@ -62,12 +65,12 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
   settings = settingsFor(here)
   names = args.takeWhile(a -> a != "--")
   included = when (settings) {
-    Some(read) -> if (read.folder == here && !names.contains("roots")) read.projects.map(p -> absolute(read.folder, p)) else []
+    Some(read) -> if (read.folder == path(here) && !names.contains("roots")) read.settings.projects else []
     None -> []
   }
   failed = included.find(folder -> {
-    println("> Project ${folder.removePrefix(here + "/")}")
-    system(executable(Unit), ["-C", folder] + args) != 0
+    println("> Project ${folder.value.removePrefix(here + "/")}")
+    system(executable(Unit), ["-C", folder.value] + args) != 0
   })
   if (failed.isSome()) 1
   else if (path("build.fk").exists()) script(settings, args)
@@ -93,13 +96,18 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
     println("build.fk: the libraries and projects it's compiled with go in settings.fk, settings = Settings(uses = [...]); plugins = [...] applies their plugins, as modules")
     1
   } else {
-    read = settings.getOrElse(Read(".", ["local"], [], []))
+    read = settings.getOrElse(Read(path("."), Settings()))
     given = ["tasks", "plugins"].filter(declares).map(name -> ", $name = $name").joinToString("")
-    repositories = read.repositories.map(r -> if (r == "local") "Local" else "At(path(\"$r\"))").joinToString(", ")
+    repositories = read.settings.repositories.map { r ->
+      when (r) {
+        Local -> "Local"
+        At(folder) -> "At(path(${quoted(folder.value)}))"
+      }
+    }.joinToString(", ")
     // The script, then its main, so the script's lines keep their numbers: its folders aren't
     // packages, as src would be if the project's folder were one of fckt's.
     program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project.copy(repositories = [$repositories]), args$given)\n"
-    code = compileScript(program, "build.fk", path(".kiln"), [library()] + pluginRoots(read.uses, read.repositories))
+    code = compileScript(program, "build.fk", path(".kiln"), [library()] + pluginRoots(read.settings.uses, read.settings.repositories))
     // A plugin's tasks use kiln's library, as kiln() says, from where this kiln has it.
     setEnv("KILN_LIB", library().value)
     if (code != 0) 1 else system(path(".kiln/build").value, args)
@@ -112,7 +120,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
   None -> None
   Some(folder) -> {
     read = readSettings(folder.value)
-    if (read.folder == here || read.projects.any(p -> absolute(read.folder, p) == here)) Some(read) else None
+    if (read.folder == path(here) || read.settings.projects.contains(path(here))) Some(read) else None
   }
 }
 
@@ -132,7 +140,7 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
     println("settings.fk: it must declare settings = Settings(...)")
     exit(1)
   }
-  program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.settingsLines(settings).forEach(line -> println(line))\n"
+  program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.SettingsLines.of(settings).forEach(line -> println(line))\n"
   cache = path(folder).resolve(".kiln/settings")
   if (compileScript(program, "settings.fk", cache, [library()]) != 0) exit(1)
   said = run(cache.resolve("build").value, [])
@@ -140,14 +148,13 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
     print(said.value)
     exit(1)
   }
-  out = said.value.lines().filter(line -> line.isNotEmpty())
-  saying = (what: String) -> out.filter(line -> line.startsWith("$what ")).map(line -> line.removePrefix("$what "))
-  Read(
-    folder,
-    saying("repository").map(r -> if (r == "local") r else absolute(folder, r.removePrefix("at "))),
-    saying("uses").map(u -> if (u.startsWith("project ")) "project " + absolute(folder, u.removePrefix("project ")) else u),
-    saying("project"),
-  )
+  when (SettingsLines.read(said.value.lines(), path(folder))) {
+    Ok(settings) -> Read(path(folder), settings)
+    Error(problem) -> {
+      println("settings.fk: $problem")
+      exit(1)
+    }
+  }
 }
 
 // Compiles program, the script name with a main, to cache/build, with fckt, roots on its path, and
@@ -176,10 +183,6 @@ type Read(folder: String, repositories: List<String>, uses: List<String>, projec
   }
 }
 
-// path, from folder, if it's relative.
-absolute(folder: String, path: String): String =
-  if (path.startsWith("/")) path else if (path == ".") folder else "$folder/${path.removePrefix("./")}"
-
 // Where uk.m4xy.kiln's source is: KILN_LIB; or lib/kiln beside the folder kiln is in, as it's
 // installed; or, built where it's developed, its src.
 @FileSystem @Process library(): Path = when (env("KILN_LIB")) {
@@ -203,34 +206,33 @@ listed(name: String, lines: List<String>): List<String> = {
 }
 
 // Where what build scripts use has its packages: a library's source, from the first of
-// repositories that has it, with the libraries it uses; a project's src.
-@Console @FileSystem @Process pluginRoots(uses: List<String>, repositories: List<String>): List<Path> = uses.flatMap(u ->
-  if (u.startsWith("project ")) [path(u.removePrefix("project ")).resolve("src")]
-  else librarySources(u.removePrefix("library "), [], repositories)
-).distinct()
+// repositories that has it, with the libraries it uses; a project's src. kiln's library is always
+// there.
+@Console @FileSystem @Process pluginRoots(uses: List<Dependency>, repositories: List<Repository>): List<Path> = uses.flatMap { used ->
+  when (used) {
+    Folder(folder) -> [folder.resolve("src")]
+    Library(lib) -> librarySources(lib, [], repositories)
+    Kiln -> []
+  }
+}.distinct()
 
-@Console @FileSystem @Process librarySources(coordinates: String, seen: List<String>, repositories: List<String>): List<Path> = when (coordinates.split(":")) {
-  [group, name, version] -> if (seen.contains(coordinates)) [] else {
-    folders = repositories.map(r -> if (r == "local") repository() else path(r))
-    when (folders.map(f -> f.resolve("$group/$name/$version")).find(f -> f.isDirectory())) {
-      Some(folder) -> {
-        uses = folder.resolve("dependencies")
-        [folder.resolve("src")] + (if (uses.exists()) uses.readLines().filter(l -> l.isNotBlank()) else []).flatMap(l -> librarySources(l.trim(), seen + [coordinates], repositories))
-      }
-      None -> {
-        println("settings.fk: it uses $coordinates, which isn't in ${folders.map(f -> f.value).joinToString(" or ")}: run kiln publishLocal in its project")
-        exit(1)
+@Console @FileSystem @Process librarySources(lib: Coordinates, seen: List<Coordinates>, repositories: List<Repository>): List<Path> =
+  if (seen.contains(lib)) []
+  else when (folderOf(lib, repositories)) {
+    Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
+      when (used) {
+        Library(next) -> librarySources(next, seen + [lib], repositories)
+        else -> []
       }
     }
+    None -> {
+      println("settings.fk: it uses ${coordinatesText(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
+      exit(1)
+    }
   }
-  else -> {
-    println("settings.fk: what it uses is library(\"group:name:version\") or projectAt(\"folder\"), not $coordinates")
-    exit(1)
-  }
-}
 
-// Where published libraries are: KILN_REPOSITORY, or ~/.kiln/repository.
-@Process repository(): Path = path(env("KILN_REPOSITORY").getOrElse(env("HOME").getOrElse(".") + "/.kiln/repository"))
+// text as a fckt string: in quotes, with what would end it or start a template escaped.
+quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$") + "\""
 
 // The .fk files in folder and those in it.
 @FileSystem sources(folder: Path): List<Path> =

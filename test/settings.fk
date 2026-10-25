@@ -1,0 +1,27 @@
+import fckt.io.Paths.*
+import uk.m4xy.fktests.api.Test
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.SettingsLines
+
+// Settings read back as they were written, with their folders from where settings.fk is.
+@Test settingsAreReadBackAsTheyWereWritten() = {
+  settings = Settings(
+    repositories = [At(path("team")), Local],
+    uses = [Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")), Folder(path("../plugin")), Kiln],
+    projects = [path("runner"), path("/elsewhere/kiln")],
+  )
+  assertEquals(
+    Ok(Settings(
+      repositories = [At(path("/work/team")), Local],
+      uses = [Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")), Folder(path("/plugin")), Kiln],
+      projects = [path("/work/runner"), path("/elsewhere/kiln")],
+    )),
+    SettingsLines.read(SettingsLines.of(settings), path("/work")),
+  )
+}
+
+// A line that isn't a setting says so, rather than being passed over.
+@Test whatIsntASettingSaysSo() = {
+  assertEquals(Error("there's no setting 'colour blue'"), SettingsLines.read(["repository local", "colour blue"], path("/work")))
+  assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), SettingsLines.read(["uses library json"], path("/work")))
+}

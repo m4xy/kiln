@@ -220,7 +220,9 @@ module Prices {
 
 ## How it works
 
-kiln compiles `settings.fk` with a `main` that prints what it says, and runs it; then it adds a
+kiln compiles `settings.fk` with a `main` that prints what it says, a line each as
+`uk.m4xy.kiln.SettingsLines.of` writes them, runs it, and reads them back into the same `Settings`
+with `SettingsLines.read`; then it adds a
 `main` to the build script, which hands `project`, with the settings' repositories, and `tasks` and
 `plugins` if it declares them, to `uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` and `ocamlopt` to a
 program, `.kiln/build`, again only when the script or kiln changes, and runs it. The tasks are fckt too, in
