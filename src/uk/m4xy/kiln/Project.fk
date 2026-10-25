@@ -15,8 +15,14 @@ type Project(
   main: Path = path("src/main.fk"),
   // The folders its packages are in.
   sources: List<Path> = [path("src")],
-  // The folder of its tests: each file there with a main is a test, which fails if it does.
+  // The folder of its tests: its functions marked @Test, and each file there with a main, a test
+  // of its own, which fails if it does.
   tests: Path = path("test"),
+  // What only its tests use, as a test library: library("uk.m4xy:fk-tests:0.1.0"). Its programs
+  // and packages don't see them.
+  testDependencies: List<Dependency> = [],
+  // The module that runs its functions marked @Test, from a test library: fk-tests's, by default.
+  testRunner: String = "uk.m4xy.fktests.Testing",
   // Where what's built goes: the program is output/bin/name.
   output: Path = path("build"),
 )

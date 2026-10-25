@@ -30,6 +30,50 @@ tasks = standardTasks + [
   assertEquals(1, failed.code)
   expectContains(failed.value, "  FAILED broken.fk")
   expectContains(failed.value, "BUILD FAILED: 1 of 2 tests failed")
+  // Functions marked @Test are run by one program, each on its own, with the runner a test library
+  // has, which only the tests see; what follows -- chooses which run.
+  checks = projects("checks")
+  write(checks, "src/uk/m4xy/checks/Test.fk", "annotation type Test\n")
+  write(checks, "src/uk/m4xy/checks/Runner.fk", """module Runner {
+  type Outcome { Passed, Failed, Skipped }
+  @Console section(args: List<String>, file: String, names: List<String>): Unit = println(file)
+  @Console check(args: List<String>, file: String, name: String, body: @Fail () -> Unit): Outcome =
+    if (!args.isEmpty() && !args.contains(name)) Skipped
+    else when (attempt { body() }) {
+      Ok(_) -> {
+        println("  passed " + name)
+        Passed
+      }
+      Error(reason) -> {
+        println("  FAILED " + name + ": " + reason)
+        Failed
+      }
+    }
+  @Console finish(outcomes: List<Outcome>): Unit = {
+    failed = outcomes.filter(o -> o == Failed).size
+    println(outcomes.filter(o -> o == Passed).size.toString() + " passed")
+    if (failed > 0) stop(1)
+  }
+  private external stop(code: Int): Unit = "exit code"
+}
+""")
+  write(checks, "build.fk", "project = Project(name = \"checks\", group = \"uk.m4xy\")\n")
+  till = projects("till")
+  write(till, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n")
+  write(till, "test/prices.fk", "import uk.m4xy.checks.Test\nimport pricing.Prices\n\n@Test sums() = assert(Prices.total([1, 2, 3]) == 6)\n@Test empty() = assert(Prices.total([]) == 0)\n")
+  write(till, "build.fk", "project = Project(name = \"till\", testDependencies = [projectAt(\"../checks\")], testRunner = \"uk.m4xy.checks.Runner\")\n")
+  assertEquals("> Task :test\n  prices.fk\n    passed sums\n    passed empty\n  2 passed\nBUILD SUCCESSFUL\n", kiln(till, ["test"]).value)
+  assertEquals("> Task :test\n  2 passed (up to date)\nBUILD SUCCESSFUL\n", kiln(till, ["test"]).value)
+  assertEquals("> Task :test\n  prices.fk\n    passed empty\n  1 passed\nBUILD SUCCESSFUL\n", kiln(till, ["test", "--", "empty"]).value)
+  write(till, "test/wrong.fk", "import uk.m4xy.checks.Test\n\n@Fail @Test adds() = fail(\"wrong\")\n")
+  wrong = kiln(till, ["test"])
+  assertEquals(1, wrong.code)
+  expectContains(wrong.value, "    FAILED adds: wrong\n  2 passed\n")
+  expectContains(wrong.value, "BUILD FAILED: tests failed")
+  expectContains(till.resolve(".kiln/test-paths").readText(), "tests test\n")
+  // The program doesn't see what only its tests use.
+  write(till, "src/main.fk", "import uk.m4xy.checks.Test\n\nmain() = println(\"till\")\n")
+  expectContains(kiln(till, ["compile"]).value, "uk.m4xy.checks")
   // What isn't a project, or a task, says so.
   assertEquals(2, kiln(shop.resolve("src"), ["build"]).code)
   expectContains(kiln(shop, ["nope"]).value, "BUILD FAILED: there's no task 'nope'")

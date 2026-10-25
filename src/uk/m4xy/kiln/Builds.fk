@@ -39,7 +39,9 @@ module Builds {
         order(names, tasks, []).forEach(task -> {
           println("> Task :${task.name}")
           action = task.action
-          if (task.name == "run") runProgram(project, programArgs) else action(project)
+          if (task.name == "run") runProgram(project, programArgs)
+          else if (task.name == "test") runTests(project, programArgs)
+          else action(project)
         })
         println("BUILD SUCCESSFUL")
       }
@@ -71,7 +73,7 @@ module Builds {
   // file.fk to OCaml, with its packages in roots, then to a program at program, linked with what
   // linking has compiled; unless it's up to date, compiled from inputs, a digest of what it's
   // compiled from. Whether it was compiled.
-  @Building private build(project: Project, linking: Linking, roots: List<Path>, file: Path, program: Path, inputs: String): Boolean = {
+  @Building private build(project: Project, program: Path, inputs: String, compile: @Building (Path) -> Unit): Boolean = {
     ocaml = project.output.resolve("ocaml")
     stamp = ocaml.resolve(program.name + ".inputs")
     if (program.exists() && stamp.exists() && stamp.readText() == inputs) false
@@ -82,7 +84,7 @@ module Builds {
         Some(dir) -> dir.makeDirs()
         None -> Unit
       }
-      compileProgram(linking, roots, file, ocaml.resolve(program.name + ".ml"), program)
+      compile(ocaml.resolve(program.name + ".ml"))
       stamp.writeText(inputs)
       true
     }
@@ -96,7 +98,8 @@ module Builds {
     remember(resolved, linking)
     inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
     if (project.main.exists()) {
-      if (!build(project, linking, resolved.roots, project.main, project.output.resolve("bin").resolve(project.name), inputs)) println("  up to date")
+      program = project.output.resolve("bin").resolve(project.name)
+      if (!build(project, program, inputs, ml -> compileProgram(linking, resolved.roots, project.main, ml, program))) println("  up to date")
     } else {
       packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
       if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
@@ -114,24 +117,52 @@ module Builds {
     }
   }
 
-  @Building private test(project: Project): Unit = {
-    // A test is a program, with a main; the other files there are what the tests share.
-    files = if (project.tests.isDirectory()) project.tests.listFiles().filter(f -> f.extension == "fk" && hasMain(f)) else []
-    if (files.isEmpty()) println("  no tests in ${project.tests.value}")
-    resolved = if (files.isEmpty()) Resolved([], []) else resolve(project)
-    linking = if (files.isEmpty()) Linking(project.output, []) else linking(resolved)
-    if (!files.isEmpty()) remember(resolved, linking)
-    // A test that passed, and whose program would be compiled from what it was, isn't run again.
-    shared = if (files.isEmpty()) "" else inputs(linking, resolved.roots + [project.tests], [])
-    failed = files.filter(file -> {
-      program = project.output.resolve("tests").resolve(file.nameWithoutExtension)
-      passed = project.output.resolve("tests").resolve(file.nameWithoutExtension + ".passed")
+  @Building private test(project: Project): Unit = runTests(project, [])
+
+  // The tests: the functions marked @Test in the test folder's files, run by one program, which
+  // args, from after --, choose among; and each file there with a main, a program of its own. The
+  // other files are what they share. What passed, and would be compiled from what it was, isn't
+  // run again.
+  @Building private runTests(project: Project, args: List<String>): Unit = {
+    files = if (project.tests.isDirectory()) project.tests.listFiles().filter(f -> f.extension == "fk") else []
+    programs = files.filter(f -> hasMain(f))
+    marked = files.any(f -> !hasMain(f) && hasTests(f))
+    if (programs.isEmpty() && !marked) println("  no tests in ${project.tests.value}")
+    any = marked || !programs.isEmpty()
+    resolved = if (any) resolveTests(project) else Resolved([], [])
+    linking = if (any) linking(resolved) else Linking(project.output, [])
+    if (any) rememberTests(project, linking)
+    shared = if (any) inputs(linking, resolved.roots + [project.tests], []) else ""
+    tests = project.output.resolve("tests")
+    // The functions marked @Test, whose runner says how each went; chosen ones are always run.
+    suiteFailed = if (!marked) false else {
+      program = tests.resolve("tests")
+      passed = tests.resolve("tests.passed")
+      if (args.isEmpty() && passed.exists() && passed.readText() == shared && program.exists()) {
+        println("  ${tests.resolve("tests.summary").readText()} (up to date)")
+        false
+      } else {
+        passed.delete()
+        build(project, program, shared, ml -> compileTests(linking, resolved.roots, project.tests, project.testRunner, ml, program))
+        exit = run(program.value, args)
+        lines = exit.value.trim().split("\n")
+        lines.forEach(line -> println("  $line"))
+        if (exit.code == 0 && args.isEmpty()) {
+          tests.resolve("tests.summary").writeText(lines.lastOrNull().getOrElse(""))
+          passed.writeText(shared)
+        }
+        exit.code != 0
+      }
+    }
+    failed = programs.filter(file -> {
+      program = tests.resolve(file.nameWithoutExtension)
+      passed = tests.resolve(file.nameWithoutExtension + ".passed")
       if (passed.exists() && passed.readText() == shared && program.exists()) {
         println("  passed ${file.name} (up to date)")
         false
       } else {
         passed.delete()
-        build(project, linking, resolved.roots, file, program, shared)
+        build(project, program, shared, ml -> compileProgram(linking, resolved.roots, file, ml, program))
         exit = run(program.value, [])
         if (exit.code == 0) {
           passed.writeText(shared)
@@ -142,7 +173,9 @@ module Builds {
         exit.code != 0
       }
     })
-    if (!failed.isEmpty()) fail("${failed.size} of ${files.size} tests failed")
+    if (suiteFailed && failed.isEmpty()) fail("tests failed")
+    if (suiteFailed) fail("tests failed, and ${failed.size} of ${programs.size} test programs")
+    if (!failed.isEmpty()) fail("${failed.size} of ${programs.size} tests failed")
   }
 
   // Copies the packages under the group's folder, and what it depends on, to the repository:
@@ -181,6 +214,18 @@ module Builds {
     folder.resolve("paths").writeText((resolved.roots.map(root -> "source ${root.value}\n") +
       linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
   }
+
+  // The tests' libraries, for editors, in .kiln/test-paths: the tests' folder, then each
+  // library's interface, as .kiln/paths has the project's.
+  @FileSystem private rememberTests(project: Project, linking: Linking): Unit = {
+    folder = path(".kiln")
+    folder.makeDirs()
+    folder.resolve("test-paths").writeText((["tests ${project.tests.value}\n"] +
+      linking.libraries.map(lib -> "library ${lib.folder.resolve("interface").value}\n")).joinToString(""))
+  }
+
+  // Whether the file marks a function @Test, on a line of its own.
+  @FileSystem private hasTests(file: Path): Boolean = file.readLines().any(line -> line.startsWith("@Test "))
 
   // Whether the file declares main, on a line of its own, maybe after its effects: @Console main(...).
   @FileSystem private hasMain(file: Path): Boolean =

@@ -7,14 +7,17 @@ itself.
 A project is a folder with a `build.fk`, which says what the project is, in fckt:
 
 ```kotlin
-project = Project(name = "shop")
+project = Project(name = "shop", testDependencies = [library("uk.m4xy:fk-tests:0.1.0")])
 ```
 
 ```
 $ kiln build
 > Task :compile
 > Task :test
-  passed prices.fk
+  prices.fk
+    passed sumsItems
+    passed emptyIsZero
+  2 passed, 0 failed
 > Task :build
 BUILD SUCCESSFUL
 $ kiln run -- a b
@@ -36,8 +39,12 @@ It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in 
 ## Tasks
 
 `kiln build`, run in a project's folder, compiles `src/main.fk` and the packages in `src` to
-`build/bin/<name>`, then compiles and runs each program in `test`, any of which failing fails the
-build. Several tasks run in turn, each once and after the tasks it depends on: `kiln clean build`.
+`build/bin/<name>`, then runs the tests in `test`, any of which failing fails the build: the
+functions marked `@Test` there, which fckt compiles to one program that a test library's runner
+runs each on its own, and each file with a `main`, a program of its own. A test library is a test
+dependency, which only the tests see: `testDependencies = [library("uk.m4xy:fk-tests:0.1.0")]`;
+`testRunner` names another library's runner than [fk-tests](https://github.com/m4xy/fk-tests)'s. `kiln test -- sumsItems` runs just the tests named,
+by name, file or both, as `prices.sumsItems`. Several tasks run in turn, each once and after the tasks it depends on: `kiln clean build`.
 `kiln -C dir build` builds the project in `dir`. What's up to date isn't done again: a program
 whose sources, libraries, fckt and OCaml are what they were isn't compiled again, and a test that
 passed with them isn't run again; `kiln clean` forgets.
@@ -45,7 +52,7 @@ passed with them isn't run again; `kiln clean` forgets.
 | Task | |
 | --- | --- |
 | `compile` | Compiles the program to `build/bin/<name>`; a library, which has no `src/main.fk`, is compiled as a library, to `build/library` |
-| `test` | Compiles and runs each program in `test`: each file there with a `main`; the others are what the tests share |
+| `test` | Runs the tests in `test`: its functions marked `@Test`, and each file there with a `main`; the others are what they share. What follows `--` chooses which `@Test`s run |
 | `build` | `compile`, then `test` |
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
@@ -68,6 +75,8 @@ project = Project(
   main = path("src/main.fk"),
   sources = [path("src")],
   tests = path("test"),
+  testDependencies = [],          // what only the tests use: library("uk.m4xy:fk-tests:0.1.0")
+  testRunner = "uk.m4xy.fktests.Testing",
   output = path("build"),
 )
 ```
