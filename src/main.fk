@@ -67,14 +67,17 @@ buildImports = [
       entry = cache.resolve("main.fk")
       ml = cache.resolve("build.ml")
       stamp = cache.resolve("stamp")
-      program = "main(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args$tasks)\n"
+      // The script, then its main, so the script's lines keep their numbers: its folders aren't
+      // packages, as src would be if the project's folder were one of fckt's.
+      program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args$tasks)\n"
       // Compiled again when the script, or kiln or its library, changes.
-      key = "kiln $version\n$program${lines.joinToString("\n")}\n${sources(library()).map(f -> f.readText()).joinToString("\n")}"
+      key = "kiln $version\n$program\n${sources(library()).map(f -> f.readText()).joinToString("\n")}"
       fresh = ml.exists() && stamp.exists() && stamp.readText() == key
       compiled = if (fresh) 0 else {
         entry.writeText(program)
-        exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value, "-I", ".", "-I", library().value] + buildImports.flatMap(i -> ["--import", i]))
-        if (exit.code == 0) stamp.writeText(key) else print(exit.value)
+        exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value, "-I", library().value] + buildImports.flatMap(i -> ["--import", i]))
+        // Its errors are build.fk's.
+        if (exit.code == 0) stamp.writeText(key) else print(exit.value.split(entry.value).joinToString("build.fk"))
         exit.code
       }
       if (compiled != 0) 1 else system("ocaml", ["-I", "+unix", "unix.cma", ml.value] + args)

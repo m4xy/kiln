@@ -27,8 +27,18 @@ import fckt.io.Files.*
   repository = path("build/test-repository")
   assertEquals("uk.m4xy:units:1.0.0\n", repository.resolve("uk.m4xy/money/2.1.0/dependencies").readText())
   assert(repository.resolve("uk.m4xy/money/2.1.0/src/uk/m4xy/money/Money.fk").exists())
-  // The project from its folder, with the libraries it uses and theirs.
+  // The project from its folder, with the libraries it uses and theirs, each compiled once:
+  // money's units was, when money was.
+  assertEquals("> Task :compile\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
   assertEquals("> Task :compile\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
+  // Published again, it's compiled again.
+  write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n")
+  assertEquals(0, kiln(units, ["publishLocal"]).code)
+  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "  compiling uk.m4xy:units:1.0.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p")
+  // What a library shows says its types, as programs are checked against them without its code.
+  write(dir, "money/src/uk/m4xy/money/Loose.fk", "module Loose {\n  twice(x: Int) = x * 2\n}\n")
+  expectContains(kiln(money, ["compile"]).value, "'twice' is in a library's interface, which programs are checked against, so it needs a result type")
+  money.resolve("src/uk/m4xy/money/Loose.fk").delete()
   // A library that doesn't check, or has packages outside its group, isn't published.
   write(dir, "money/src/uk/m4xy/money/Broken.fk", "module Broken { f(): Int = \"x\" }\n")
   expectContains(kiln(money, ["publishLocal"]).value, "Broken.fk:1:28: error: type mismatch")
@@ -40,6 +50,9 @@ import fckt.io.Files.*
   write(dir, "units/build.fk", "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.10.0\")\n")
   assertEquals(0, kiln(units, ["publishLocal"]).code)
   write(dir, "pricing/build.fk", "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n")
-  roots = kiln(dir.resolve("pricing"), ["roots"]).value.split("\n").filter(line -> !line.isBlank()).map(line -> line.substringAfterLast("test-repository/"))
-  assertEquals(["src", "uk.m4xy/money/2.1.0/src", "uk.m4xy/units/1.10.0/src"], roots)
+  roots = kiln(dir.resolve("pricing"), ["roots"]).value.split("\n").filter(line -> !line.isBlank())
+  assertEquals(["src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0"], roots)
+  // money, compiled with units 1.10.0 now.
+  write(dir, "pricing/src/main.fk", "import pricing.Prices\nmain() = println(Prices.label(4))\n")
+  expectContains(kiln(dir.resolve("pricing"), ["run"]).value, "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p")
 }

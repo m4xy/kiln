@@ -6,6 +6,7 @@ import fckt.io.Processes.*
 import fckt.io.Process
 import fckt.io.FileSystem
 import uk.m4xy.kiln.Dependencies.*
+import uk.m4xy.kiln.Compiling.*
 
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
 // calls runBuild(project, args) with what follows it on the command line.
@@ -18,7 +19,7 @@ module Builds {
     Task("build", "Compiles and tests", dependsOn = ["compile", "test"], action = project -> Unit),
     Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = project -> Unit),
     Task("publishLocal", "Compiles and tests, then publishes it as a library to ~/.kiln/repository", dependsOn = ["compile", "test"], action = publishLocal),
-    Task("roots", "Prints the folders its packages and its dependencies' are in", action = project -> Unit),
+    Task("roots", "Prints the folders its packages and its folder projects' are in, and the libraries it uses", action = project -> Unit),
   ]
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- is the
@@ -27,8 +28,12 @@ module Builds {
     names = args.takeWhile(a -> a != "--")
     programArgs = args.dropWhile(a -> a != "--").drop(1)
     result = attempt {
-      // Only the folders, for another project that depends on this one.
-      if (names == ["roots"]) sourceRoots(project).forEach(root -> println(root.value))
+      // Only these, for another project that depends on this one.
+      if (names == ["roots"]) {
+        resolved = resolve(project)
+        resolved.roots.forEach(root -> println(root.value))
+        resolved.libraries.forEach(lib -> println("library ${coordinatesText(lib)}"))
+      }
       else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
       else {
         order(names, tasks, []).forEach(task -> {
@@ -63,56 +68,43 @@ module Builds {
     }
   }
 
-  // The fckt compiler: FCKT, or fckt where the shell finds it.
-  @Process private compiler(): String = env("FCKT").getOrElse("fckt")
-
-  // Runs command, and fails with what it printed if it doesn't exit with 0.
-  @Process private runOrFail(command: String, args: List<String>): Unit = {
-    exit = run(command, args)
-    if (exit.code != 0) fail("${command.substringAfterLast("/")} failed:\n${exit.value.trim()}")
-  }
-
-  // file.fk to OCaml, with its packages in roots, then to a program at program.
-  @Building private build(project: Project, roots: List<Path>, file: Path, program: Path): Unit = {
-    ml = project.output.resolve("ocaml").resolve(program.name + ".ml")
+  // file.fk to OCaml, with its packages in roots, then to a program at program, linked with what
+  // linking has compiled.
+  @Building private build(project: Project, linking: Linking, roots: List<Path>, file: Path, program: Path): Unit = {
     project.output.resolve("ocaml").makeDirs()
     when (program.parent) {
       Some(dir) -> dir.makeDirs()
       None -> Unit
     }
-    runOrFail(compiler(), [file.value, "-o", ml.value] + roots.flatMap(root -> ["-I", root.value]))
-    runOrFail("ocamlopt", ["-I", "+unix", "unix.cmxa", "-w", "-a", ml.value, "-o", program.value])
+    compileProgram(linking, roots, file, project.output.resolve("ocaml").resolve(program.name + ".ml"), program)
   }
 
-  // A library has no main: what's compiled is a program that imports each of its packages, so
-  // all of it is checked.
-  @Building private compile(project: Project): Unit =
-    if (project.main.exists()) build(project, sourceRoots(project), project.main, project.output.resolve("bin").resolve(project.name))
+  // A library has no main: its packages are compiled as a library is, which checks all of them and
+  // that what it shows says its types; to output/library, its interface and its OCaml.
+  @Building private compile(project: Project): Unit = {
+    resolved = resolve(project)
+    linking = linking(resolved)
+    if (project.main.exists()) build(project, linking, resolved.roots, project.main, project.output.resolve("bin").resolve(project.name))
     else {
       packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
       if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
-      check = project.output.resolve("check").resolve("check.fk")
-      check.parent.getOrElse(project.output).makeDirs()
-      check.writeText(packages.map(p -> "import $p.*\n").joinToString("") + "\nmain() = Unit\n")
-      build(project, sourceRoots(project), check, project.output.resolve("check").resolve(project.name))
+      library = project.output.resolve("library")
+      library.makeDirs()
+      unit = unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
+      compilePackages(linking, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
       println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
     }
-
-  // The packages in folder and those in it, as names from root: uk.m4xy.money.
-  @FileSystem private packagesIn(root: Path, folder: Path): List<String> = {
-    children = folder.listFiles()
-    own = if (folder != root && children.any(f -> f.extension == "fk" && !f.isDirectory())) [folder.relativeTo(root).getOrElse(folder).names.joinToString(".")] else []
-    own + children.filter(f -> f.isDirectory()).flatMap(f -> packagesIn(root, f))
   }
 
   @Building private test(project: Project): Unit = {
     // A test is a program, with a main; the other files there are what the tests share.
     files = if (project.tests.isDirectory()) project.tests.listFiles().filter(f -> f.extension == "fk" && hasMain(f)) else []
     if (files.isEmpty()) println("  no tests in ${project.tests.value}")
-    roots = if (files.isEmpty()) [] else sourceRoots(project)
+    resolved = if (files.isEmpty()) Resolved([], []) else resolve(project)
+    linking = if (files.isEmpty()) Linking(project.output, []) else linking(resolved)
     failed = files.filter(file -> {
       program = project.output.resolve("tests").resolve(file.nameWithoutExtension)
-      build(project, roots, file, program)
+      build(project, linking, resolved.roots, file, program)
       exit = run(program.value, [])
       if (exit.code == 0) println("  passed ${file.name}") else println("  FAILED ${file.name}\n${exit.value.trim()}")
       exit.code != 0

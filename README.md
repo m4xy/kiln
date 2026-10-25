@@ -42,13 +42,13 @@ build. Several tasks run in turn, each once and after the tasks it depends on: `
 
 | Task | |
 | --- | --- |
-| `compile` | Compiles the program to `build/bin/<name>`; a library, which has no `src/main.fk`, has every package checked |
+| `compile` | Compiles the program to `build/bin/<name>`; a library, which has no `src/main.fk`, is compiled as a library, to `build/library` |
 | `test` | Compiles and runs each program in `test`: each file there with a `main`; the others are what the tests share |
 | `build` | `compile`, then `test` |
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
 | `publishLocal` | Compiles and tests, then publishes the project as a library to the local repository |
-| `roots` | Prints the folders the project's packages, and its dependencies', are in |
+| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses |
 | `tasks` | Lists the tasks |
 
 ## build.fk
@@ -100,9 +100,22 @@ project = Project(name = "money", group = "uk.m4xy", version = "2.1.0", dependen
 project = Project(name = "shop", dependencies = [library("uk.m4xy:money:2.1.0"), projectAt("../pricing")])
 ```
 
-A project's packages are then found in its own folders, its libraries' in the repository, with
-theirs, and its folder projects', with theirs, as `kiln -C <folder> roots` says. Where two ask
-for a library in different versions, the higher is used.
+A project's packages are then found in its own folders, and its folder projects', with the
+libraries each uses, as `kiln -C <folder> roots` says. Where two ask for a library in different
+versions, the higher is used.
+
+A library is compiled once, not with every build: the first build that uses it compiles it, after
+the libraries it uses, into kiln's cache, `~/.kiln/cache`, with its interface, which the project
+is checked against, and then links each program with it. It's compiled again only for a different
+fckt or OCaml, a different version of a library it uses, or when it's published again. What a
+library shows is in its interface without its code, so its public functions and values say their
+types, which `kiln compile` checks:
+
+```kotlin
+module Prices {
+  label(pounds: Int): String = "costs ${Money.format(pounds)}"   // not label(pounds: Int) = ...
+}
+```
 
 ## How it works
 
@@ -112,6 +125,10 @@ again only when the script or kiln changes, and runs it with `ocaml`. The tasks 
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.
 
+Programs are compiled separately: the standard library (`fckt --standard`) and each library
+(`fckt --library`) once, with `ocamlopt -c`, into the cache, in a folder for each fckt and OCaml;
+then each program on its own (`fckt -L`), which is linked with them.
+
 | Variable | |
 | --- | --- |
 | `FCKT` | The fckt compiler, if it isn't `fckt` on `PATH` |
@@ -119,5 +136,7 @@ version control.
 | `KILN_HOME` | Where `kiln install` installs to, instead of `~/.kiln` |
 | `KILN_LIB` | Where kiln's library is, instead of beside the program |
 | `KILN_REPOSITORY` | The local repository, instead of `~/.kiln/repository` |
+| `KILN_CACHE` | Where compiled libraries are kept, instead of `~/.kiln/cache` |
 
-kiln's own tests, in `test`, build projects in `build/test-projects` with the kiln just built.
+kiln's own tests, in `test`, build projects in `build/test-projects` with the kiln just built, with
+a repository and a cache of their own.

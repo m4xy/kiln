@@ -7,7 +7,7 @@ import fckt.io.Files.*
 import fckt.io.Processes.*
 
 // What the tests share: projects to build, in build/test-projects, and the kiln just built to
-// build them with, with a repository of its own.
+// build them with, with a repository and a cache of its own.
 
 // The folder the tests run in, kiln's own.
 @Process here(): String = run("pwd", []).value.trim()
@@ -33,8 +33,10 @@ import fckt.io.Processes.*
 // Runs the kiln just built in folder: its exit code and everything it printed.
 @Process kiln(folder: Path, args: List<String>): Exit<String> = {
   home = here()
-  script = "d=\$1; h=\$2; shift 2; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/build/test-repository\" exec \"\$h/build/bin/kiln\" \"\$@\""
-  run("sh", ["-c", script, "sh", folder.value, home] + args)
+  script = "d=\$1; h=\$2; shift 2; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/build/test-repository\" KILN_CACHE=\"\$h/build/test-cache\" exec \"\$h/build/bin/kiln\" \"\$@\""
+  exit = run("sh", ["-c", script, "sh", folder.value, home] + args)
+  // The standard library is compiled once for all the tests, by whichever runs first.
+  Exit(exit.code, exit.value.split("  compiling the standard library\n").joinToString(""))
 }
 
 // Fails, saying what was expected and what there was, unless text contains part.

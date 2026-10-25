@@ -1,0 +1,5 @@
+import fckt.io.Path
+
+// What a project's programs are linked with: the standard library, compiled once, in its folder,
+// and the libraries the project uses, compiled once each, each after those it uses.
+type Linking(standard: Path, libraries: List<CompiledLibrary>)

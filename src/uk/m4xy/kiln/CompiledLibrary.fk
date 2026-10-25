@@ -1,0 +1,5 @@
+import fckt.io.Path
+
+// A library compiled to OCaml, once, in kiln's cache: in its folder, its interface, which
+// programs that use it are checked against, and the OCaml module unit, which they're linked with.
+type CompiledLibrary(coordinates: Coordinates, folder: Path, unit: String)
