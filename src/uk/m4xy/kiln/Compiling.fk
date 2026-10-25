@@ -35,9 +35,28 @@ module Compiling {
   // The standard library and the libraries resolved, compiled if they aren't yet.
   @Building linking(resolved: Resolved): Linking = {
     // What one fckt or OCaml compiled, another can't use, so each has its own folder.
-    toolchain = cache().resolve(digest(output(compiler(), ["--version"]) + output("ocamlopt", ["-version"])).take(16))
+    toolchain = cache().resolve(digest(fcktVersion() + output("ocamlopt", ["-version"])).take(16))
     standard = standardLibrary(toolchain)
     Linking(standard, resolved.libraries.fold([], (done, lib) -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done)))
+  }
+
+  // What fckt --version says, remembered for the fckt that said it, as asking means starting a JVM:
+  // asked again only when fckt, or what's beside it, as its jars, changes.
+  @Building private fcktVersion(): String = {
+    found = output("sh", ["-c", "command -v \"\$1\"", "sh", compiler()]).trim()
+    if (found.isEmpty()) fail("there's no ${compiler()} to compile with: put fckt on PATH, or say where it is with FCKT")
+    program = path(realPath(found))
+    // Its folder's and the folder beside it's files: an installed fckt's bin and lib.
+    near = program.parent.map(bin -> bin.listFiles() + bin.resolve("../lib").listFilesOrNone()).getOrElse([])
+    stamp = ([program] + near).map(f -> "${f.value} ${modified(f.value)}").joinToString("\n")
+    remembered = cache().resolve("fckt").resolve(digest(stamp).take(16))
+    if (remembered.exists()) remembered.readText()
+    else {
+      version = output(compiler(), ["--version"])
+      cache().resolve("fckt").makeDirs()
+      remembered.writeText(version)
+      version
+    }
   }
 
   // file to OCaml at ml, with the packages in roots and the libraries', then to a program.
@@ -139,6 +158,15 @@ module Compiling {
   @FileSystem private sourcesIn(folder: Path): List<Path> =
     if (!folder.isDirectory()) []
     else folder.listFiles().flatMap(f -> if (f.isDirectory()) sourcesIn(f) else if (f.extension == "fk") [f] else [])
+
+  // The folder's files, or none if it isn't one.
+  @FileSystem private Path.listFilesOrNone(): List<Path> = if (this.isDirectory()) this.listFiles() else []
+
+  // When the file was last changed, in seconds, or 0 if it isn't there.
+  private external modified(path: String): Float = "(fun p -> try (Unix.stat p).Unix.st_mtime with Unix.Unix_error _ -> 0.) path"
+
+  // The file path is, following links: an installed program is often a link to where it is.
+  private external realPath(path: String): String = "(fun p -> try Unix.realpath p with Unix.Unix_error _ -> p) path"
 
   // A digest of text, in hex: what's compiled from it is kept under it.
   private external digest(text: String): String = "(fun t -> Digest.to_hex (Digest.string t)) text"

@@ -7,7 +7,7 @@ import fckt.io.Processes.*
 
 // kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. It adds a
 // main to the build script, which hands project to uk.m4xy.kiln's runBuild, compiles that with
-// fckt to .kiln/build.ml, again only when it changes, and runs it with ocaml.
+// fckt and ocamlopt to .kiln/build, again only when it changes, and runs it.
 
 version = "0.1.0"
 
@@ -66,21 +66,30 @@ buildImports = [
       cache.makeDirs()
       entry = cache.resolve("main.fk")
       ml = cache.resolve("build.ml")
+      built = cache.resolve("build")
       stamp = cache.resolve("stamp")
       // The script, then its main, so the script's lines keep their numbers: its folders aren't
       // packages, as src would be if the project's folder were one of fckt's.
       program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args$tasks)\n"
-      // Compiled again when the script, or kiln or its library, changes.
+      // Compiled again, to a program, when the script, or kiln or its library, changes: running
+      // the OCaml as a script would type-check all of it every time.
       key = "kiln $version\n$program\n${sources(library()).map(f -> f.readText()).joinToString("\n")}"
-      fresh = ml.exists() && stamp.exists() && stamp.readText() == key
+      fresh = built.exists() && stamp.exists() && stamp.readText() == key
       compiled = if (fresh) 0 else {
+        stamp.delete()
         entry.writeText(program)
         exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value, "-I", library().value] + buildImports.flatMap(i -> ["--import", i]))
         // Its errors are build.fk's.
-        if (exit.code == 0) stamp.writeText(key) else print(exit.value.split(entry.value).joinToString("build.fk"))
-        exit.code
+        if (exit.code != 0) {
+          print(exit.value.split(entry.value).joinToString("build.fk"))
+          exit.code
+        } else {
+          native = run("ocamlopt", ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value])
+          if (native.code == 0) stamp.writeText(key) else print(native.value)
+          native.code
+        }
       }
-      if (compiled != 0) 1 else system("ocaml", ["-I", "+unix", "unix.cma", ml.value] + args)
+      if (compiled != 0) 1 else system(built.value, args)
     }
   }
 }

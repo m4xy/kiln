@@ -22,7 +22,7 @@ $ kiln run -- a b
 
 ## Installing
 
-kiln needs [fckt](https://github.com/m4xy/fckt) and OCaml 5.1 or newer, with `ocaml` and
+kiln needs [fckt](https://github.com/m4xy/fckt) and OCaml 5.1 or newer, with
 `ocamlopt`. The first time, `bootstrap.sh` builds kiln with fckt and has it install itself:
 
 ```sh
@@ -122,14 +122,16 @@ module Prices {
 ## How it works
 
 kiln adds a `main` to the build script, which hands `project`, and `tasks` if it declares them, to
-`uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` to `.kiln/build.ml`,
-again only when the script or kiln changes, and runs it with `ocaml`. The tasks are fckt too, in
+`uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` and `ocamlopt` to a
+program, `.kiln/build`, again only when the script or kiln changes, and runs it. The tasks are fckt too, in
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.
 
 Programs are compiled separately: the standard library (`fckt --standard`) and each library
 (`fckt --library`) once, with `ocamlopt -c`, into the cache, in a folder for each fckt and OCaml;
-then each program on its own (`fckt -L`), which is linked with them. Each compile also writes `.kiln/paths`: the
+then each program on its own (`fckt -L`), which is linked with them. `fckt --version`, which says
+which fckt compiled them, is asked once for each fckt, as it starts a JVM: a build with nothing to
+do takes a few hundredths of a second. Each compile also writes `.kiln/paths`: the
 project's source folders and its libraries' interfaces, where fckt's IntelliJ plugin finds them.
 
 | Variable | |
