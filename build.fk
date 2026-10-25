@@ -1,6 +1,6 @@
 // kiln builds itself: kiln build, then kiln install, to ~/.kiln or KILN_HOME. Its tests are
 // fk-tests', which fk-tests-kiln runs; bootstrap.sh publishes them first.
-import uk.m4xy.fktestskiln.FkTests.*
+import uk.m4xy.fktests.kiln.FkTests.*
 
 plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")]
 

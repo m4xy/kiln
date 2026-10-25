@@ -8,7 +8,7 @@ builds itself.
 A project is a folder with a `build.fk`, which says what the project is, in fckt:
 
 ```kotlin
-import uk.m4xy.fktestskiln.FkTests.*
+import uk.m4xy.fktests.kiln.FkTests.*
 
 plugins = [library("uk.m4xy:fk-tests-kiln:0.1.0")]
 

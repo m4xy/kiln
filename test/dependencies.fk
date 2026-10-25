@@ -2,7 +2,7 @@ import fckt.io.FileSystem
 import fckt.io.Process
 import fckt.io.Paths.*
 import fckt.io.Files.*
-import uk.m4xy.fktests.Test
+import uk.m4xy.fktests.api.Test
 
 // Projects use libraries published locally, and other projects straight from their folders.
 @Test @FileSystem @Process librariesArePublishedAndUsed() = {
