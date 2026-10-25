@@ -1,0 +1,31 @@
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Paths.*
+import fckt.io.Files.*
+
+// A project builds, tests and runs, with tasks of its own.
+@FileSystem @Process main() = {
+  shop = projects("shop")
+  write(shop, "src/pricing/Prices.fk", "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n")
+  write(shop, "src/main.fk", "import pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
+  write(shop, "test/prices.fk", "import pricing.Prices\n\nmain() = assertEquals(6, Prices.total([1, 2, 3]))\n")
+  write(shop, "build.fk", """project = Project(name = "shop", version = "1.2.0")
+
+tasks = standardTasks + [
+  Task("stamp", "Writes the version", dependsOn = ["compile"], action = p -> p.output.resolve("VERSION").writeText(p.version)),
+]
+""")
+  expectContains(kiln(shop, ["tasks"]).value, "  stamp - Writes the version")
+  assertEquals("> Task :compile\n> Task :test\n  passed prices.fk\n> Task :build\nBUILD SUCCESSFUL\n", kiln(shop, ["build"]).value)
+  assertEquals("> Task :compile\n> Task :run\ntotal 6 for a b\n> Task :stamp\nBUILD SUCCESSFUL\n", kiln(shop, ["run", "stamp", "--", "a", "b"]).value)
+  assertEquals("1.2.0", shop.resolve("build/VERSION").readText())
+  // A failing test fails the build.
+  write(shop, "test/broken.fk", "main() = assertEquals(1, 2)\n")
+  failed = kiln(shop, ["test"])
+  assertEquals(1, failed.code)
+  expectContains(failed.value, "  FAILED broken.fk")
+  expectContains(failed.value, "BUILD FAILED: 1 of 2 tests failed")
+  // What isn't a project, or a task, says so.
+  assertEquals(2, kiln(shop.resolve("src"), ["build"]).code)
+  expectContains(kiln(shop, ["nope"]).value, "BUILD FAILED: there's no task 'nope'")
+}

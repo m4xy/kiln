@@ -1,0 +1,41 @@
+import fckt.io.Path
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Exit
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Processes.*
+
+// What the tests share: projects to build, in build/test-projects, and the kiln just built to
+// build them with, with a repository of its own.
+
+// The folder the tests run in, kiln's own.
+@Process here(): String = run("pwd", []).value.trim()
+
+// A fresh folder for a test's projects.
+@FileSystem projects(name: String): Path = {
+  folder = path("build/test-projects").resolve(name)
+  folder.delete()
+  folder.makeDirs()
+  folder
+}
+
+// Writes text to file, in folder, making the folders it's in.
+@FileSystem write(folder: Path, file: String, text: String): Unit = {
+  target = folder.resolve(file)
+  when (target.parent) {
+    Some(parent) -> parent.makeDirs()
+    None -> Unit
+  }
+  target.writeText(text)
+}
+
+// Runs the kiln just built in folder: its exit code and everything it printed.
+@Process kiln(folder: Path, args: List<String>): Exit<String> = {
+  home = here()
+  script = "d=\$1; h=\$2; shift 2; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/build/test-repository\" exec \"\$h/build/bin/kiln\" \"\$@\""
+  run("sh", ["-c", script, "sh", folder.value, home] + args)
+}
+
+// Fails, saying what was expected and what there was, unless text contains part.
+expectContains(text: String, part: String): Unit = if (!text.contains(part)) error("expected to find:\n$part\nin:\n$text")

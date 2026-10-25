@@ -1,0 +1,2 @@
+// Which library, and which version of it: uk.m4xy:json:1.2.0.
+type Coordinates(group: String, name: String, version: String)

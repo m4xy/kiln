@@ -1,0 +1,17 @@
+// kiln builds itself: kiln build, then kiln install, to ~/.kiln or KILN_HOME.
+project = Project(name = "kiln", group = "uk.m4xy", version = "0.1.0")
+
+tasks = standardTasks + [
+  Task("install", "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = ["compile"], action = install),
+]
+
+// The program to bin, and uk.m4xy.kiln's source to lib/kiln, where the program looks for it.
+@Building install(p: Project): Unit = {
+  home = path(env("KILN_HOME").getOrElse(env("HOME").getOrElse(".") + "/.kiln"))
+  home.resolve("bin").makeDirs()
+  p.output.resolve("bin/kiln").copyTo(home.resolve("bin/kiln"))
+  library = home.resolve("lib/kiln")
+  library.delete()
+  path("src/uk").copyRecursively(library.resolve("uk"))
+  println("  installed ${home.resolve("bin/kiln").value}; ${home.resolve("bin").value} goes on PATH")
+}

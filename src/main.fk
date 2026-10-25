@@ -1,0 +1,105 @@
+import fckt.io.Path
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Processes.*
+
+// kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. It adds a
+// main to the build script, which hands project to uk.m4xy.kiln's runBuild, compiles that with
+// fckt to .kiln/build.ml, again only when it changes, and runs it with ocaml.
+
+version = "0.1.0"
+
+usage = """usage: kiln [-C <dir>] <task>... [-- <args>]
+
+Builds the fckt project whose build.fk is in this folder, or with -C, in dir: kiln build, test,
+run, clean, compile, publishLocal, roots, or tasks to list them. build.fk declares project =
+Project(name = "..."), and may declare tasks = standardTasks + [Task(...)]; what follows -- goes
+to the program, for run. FCKT says where fckt is, if the shell can't find it."""
+
+// What a build script imports without saying: what it needs to say what its project is.
+buildImports = [
+  "uk.m4xy.kiln.*", "uk.m4xy.kiln.Builds.*", "uk.m4xy.kiln.Dependencies.*",
+  "fckt.io.Path", "fckt.io.FileSystem", "fckt.io.Process", "fckt.io.Paths.*", "fckt.io.Files.*", "fckt.io.Processes.*",
+]
+
+@Console @FileSystem @Process main(args: List<String>) = {
+  rest = when (args) {
+    ["-C", dir, *more] -> {
+      changeDirectory(dir)
+      more
+    }
+    else -> args
+  }
+  code = if (rest == ["--version"]) {
+    println("kiln $version")
+    0
+  } else if (rest == ["--help"] || rest == ["-h"]) {
+    println(usage)
+    0
+  } else {
+    build(rest)
+  }
+  exit(code)
+}
+
+// Runs the tasks args names on the project here, and gives the exit code.
+@Console @FileSystem @Process build(args: List<String>): Int = {
+  script = path("build.fk")
+  if (!script.exists()) {
+    println("kiln: there's no build.fk here, so no project to build")
+    2
+  } else {
+    lines = script.readLines()
+    // What the script declares, by the names its lines start with.
+    declares = (name: String) -> lines.any(line -> line.startsWith("$name =") || line.startsWith("$name:"))
+    if (declares("main")) {
+      println("build.fk: it declares project, and kiln runs it, so it can't have a main")
+      1
+    } else if (!declares("project")) {
+      println("build.fk: it must declare project = Project(name = \"...\")")
+      1
+    } else {
+      tasks = if (declares("tasks")) ", tasks" else ""
+      cache = path(".kiln")
+      cache.makeDirs()
+      entry = cache.resolve("main.fk")
+      ml = cache.resolve("build.ml")
+      stamp = cache.resolve("stamp")
+      program = "main(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args$tasks)\n"
+      // Compiled again when the script, or kiln or its library, changes.
+      key = "kiln $version\n$program${lines.joinToString("\n")}\n${sources(library()).map(f -> f.readText()).joinToString("\n")}"
+      fresh = ml.exists() && stamp.exists() && stamp.readText() == key
+      compiled = if (fresh) 0 else {
+        entry.writeText(program)
+        exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value, "-I", ".", "-I", library().value] + buildImports.flatMap(i -> ["--import", i]))
+        if (exit.code == 0) stamp.writeText(key) else print(exit.value)
+        exit.code
+      }
+      if (compiled != 0) 1 else system("ocaml", ["-I", "+unix", "unix.cma", ml.value] + args)
+    }
+  }
+}
+
+// Where uk.m4xy.kiln's source is: KILN_LIB; or lib/kiln beside the folder kiln is in, as it's
+// installed; or, built where it's developed, its src.
+@FileSystem @Process library(): Path = when (env("KILN_LIB")) {
+  Some(folder) -> path(folder)
+  None -> {
+    home = path(executable(Unit)).parent.getOrElse(path(".")).resolve("..")
+    installed = home.resolve("lib/kiln")
+    if (installed.isDirectory()) installed else home.resolve("../src")
+  }
+}
+
+// The .fk files in folder and those in it.
+@FileSystem sources(folder: Path): List<Path> =
+  if (!folder.isDirectory()) []
+  else folder.listFiles().flatMap(f -> if (f.isDirectory()) sources(f) else if (f.extension == "fk") [f] else [])
+
+private external executable(u: Unit): String = "(fun _ -> Sys.executable_name) u"
+private @FileSystem external changeDirectory(dir: String): Unit = "Sys.chdir dir"
+// Runs command with args, with the terminal kiln has, and gives its exit code.
+private @Process external system(command: String, args: List<String>): Int = "(fun c a -> Sys.command (Filename.quote_command c a)) command args"
+private @Process external exit(code: Int): Nothing = "exit code"

@@ -1,0 +1,8 @@
+import fckt.io.Path
+
+// What a project uses: a library published with publishLocal, by its coordinates; or another
+// project, straight from its folder, as it is now. uk.m4xy.kiln.Dependencies makes them.
+type Dependency {
+  Library(coordinates: Coordinates),
+  Folder(path: Path),
+}

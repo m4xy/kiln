@@ -1,0 +1,160 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Channels.*
+import fckt.io.Processes.*
+import fckt.io.Process
+import fckt.io.FileSystem
+import uk.m4xy.kiln.Dependencies.*
+
+// Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
+// calls runBuild(project, args) with what follows it on the command line.
+module Builds {
+  // The tasks every project has.
+  standardTasks: List<Task> = [
+    Task("clean", "Deletes what's been built", action = project -> project.output.delete()),
+    Task("compile", "Compiles the program to output/bin", action = compile),
+    Task("test", "Compiles and runs each test", action = test),
+    Task("build", "Compiles and tests", dependsOn = ["compile", "test"], action = project -> Unit),
+    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = project -> Unit),
+    Task("publishLocal", "Compiles and tests, then publishes it as a library to ~/.kiln/repository", dependsOn = ["compile", "test"], action = publishLocal),
+    Task("roots", "Prints the folders its packages and its dependencies' are in", action = project -> Unit),
+  ]
+
+  // Runs the tasks args name, each after those it depends on, and once; what follows -- is the
+  // program's, for run. tasks lists them.
+  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = standardTasks): Unit = {
+    names = args.takeWhile(a -> a != "--")
+    programArgs = args.dropWhile(a -> a != "--").drop(1)
+    result = attempt {
+      // Only the folders, for another project that depends on this one.
+      if (names == ["roots"]) sourceRoots(project).forEach(root -> println(root.value))
+      else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
+      else {
+        order(names, tasks, []).forEach(task -> {
+          println("> Task :${task.name}")
+          action = task.action
+          if (task.name == "run") runProgram(project, programArgs) else action(project)
+        })
+        println("BUILD SUCCESSFUL")
+      }
+    }
+    when (result) {
+      Ok(_) -> Unit
+      Error(reason) -> fail("BUILD FAILED: $reason")
+    }
+  }
+
+  @Console private listTasks(project: Project, tasks: List<Task>): Unit = {
+    println("Tasks of ${project.name} ${project.version}:")
+    tasks.forEach(task -> println("  ${task.name} - ${task.description}"))
+  }
+
+  // The tasks to run for names, in order: each after what it depends on, once.
+  @Fail private order(names: List<String>, tasks: List<Task>, done: List<Task>): List<Task> = when (names) {
+    [] -> done
+    [name, *rest] -> {
+      task = when (tasks.find(t -> t.name == name)) {
+        Some(found) -> found
+        None -> fail("there's no task '$name'; kiln tasks lists them")
+      }
+      before = if (done.contains(task)) done else order(task.dependsOn, tasks, done)
+      order(rest, tasks, if (before.contains(task)) before else before + [task])
+    }
+  }
+
+  // The fckt compiler: FCKT, or fckt where the shell finds it.
+  @Process private compiler(): String = env("FCKT").getOrElse("fckt")
+
+  // Runs command, and fails with what it printed if it doesn't exit with 0.
+  @Process private runOrFail(command: String, args: List<String>): Unit = {
+    exit = run(command, args)
+    if (exit.code != 0) fail("${command.substringAfterLast("/")} failed:\n${exit.value.trim()}")
+  }
+
+  // file.fk to OCaml, with its packages in roots, then to a program at program.
+  @Building private build(project: Project, roots: List<Path>, file: Path, program: Path): Unit = {
+    ml = project.output.resolve("ocaml").resolve(program.name + ".ml")
+    project.output.resolve("ocaml").makeDirs()
+    when (program.parent) {
+      Some(dir) -> dir.makeDirs()
+      None -> Unit
+    }
+    runOrFail(compiler(), [file.value, "-o", ml.value] + roots.flatMap(root -> ["-I", root.value]))
+    runOrFail("ocamlopt", ["-I", "+unix", "unix.cmxa", "-w", "-a", ml.value, "-o", program.value])
+  }
+
+  // A library has no main: what's compiled is a program that imports each of its packages, so
+  // all of it is checked.
+  @Building private compile(project: Project): Unit =
+    if (project.main.exists()) build(project, sourceRoots(project), project.main, project.output.resolve("bin").resolve(project.name))
+    else {
+      packages = project.sources.flatMap(root -> packagesIn(root, root)).distinct()
+      if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map(s -> s.value).joinToString(", ")}")
+      check = project.output.resolve("check").resolve("check.fk")
+      check.parent.getOrElse(project.output).makeDirs()
+      check.writeText(packages.map(p -> "import $p.*\n").joinToString("") + "\nmain() = Unit\n")
+      build(project, sourceRoots(project), check, project.output.resolve("check").resolve(project.name))
+      println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
+    }
+
+  // The packages in folder and those in it, as names from root: uk.m4xy.money.
+  @FileSystem private packagesIn(root: Path, folder: Path): List<String> = {
+    children = folder.listFiles()
+    own = if (folder != root && children.any(f -> f.extension == "fk" && !f.isDirectory())) [folder.relativeTo(root).getOrElse(folder).names.joinToString(".")] else []
+    own + children.filter(f -> f.isDirectory()).flatMap(f -> packagesIn(root, f))
+  }
+
+  @Building private test(project: Project): Unit = {
+    // A test is a program, with a main; the other files there are what the tests share.
+    files = if (project.tests.isDirectory()) project.tests.listFiles().filter(f -> f.extension == "fk" && hasMain(f)) else []
+    if (files.isEmpty()) println("  no tests in ${project.tests.value}")
+    roots = if (files.isEmpty()) [] else sourceRoots(project)
+    failed = files.filter(file -> {
+      program = project.output.resolve("tests").resolve(file.nameWithoutExtension)
+      build(project, roots, file, program)
+      exit = run(program.value, [])
+      if (exit.code == 0) println("  passed ${file.name}") else println("  FAILED ${file.name}\n${exit.value.trim()}")
+      exit.code != 0
+    })
+    if (!failed.isEmpty()) fail("${failed.size} of ${files.size} tests failed")
+  }
+
+  // Copies the packages under the group's folder, and what it depends on, to the repository:
+  // group/name/version, with src and a dependencies file.
+  @Building private publishLocal(project: Project): Unit = {
+    if (project.group.isEmpty()) fail("a library needs a group, which its packages go under: Project(group = \"uk.m4xy\", ...)")
+    project.dependencies.forEach(d -> when (d) {
+      Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
+      Library(_) -> Unit
+    })
+    coordinates = Coordinates(project.group, project.name, project.version)
+    target = folderOf(coordinates)
+    groupPath = project.group.split(".").joinToString("/")
+    // Its packages are all its group's, so they never meet another library's.
+    project.sources.flatMap(root -> packagesIn(root, root)).forEach(p -> {
+      if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
+    })
+    project.sources.forEach(root -> {
+      if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
+    })
+    // Only once it's sure to work, what was published as this version goes.
+    target.delete()
+    project.sources.forEach(root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)))
+    target.resolve("dependencies").writeText(project.dependencies.flatMap(d -> when (d) {
+      Library(lib) -> ["${coordinatesText(lib)}\n"]
+      Folder(_) -> []
+    }).joinToString(""))
+    println("  published ${coordinatesText(coordinates)} to ${target.value}")
+  }
+
+  // Whether the file declares main, on a line of its own, maybe after its effects: @Console main(...).
+  @FileSystem private hasMain(file: Path): Boolean =
+    file.readLines().any(line -> line.startsWith("main(") || (line.startsWith("@") && line.contains(" main(")))
+
+  @Building private runProgram(project: Project, args: List<String>): Unit = {
+    program = project.output.resolve("bin").resolve(project.name)
+    exit = streaming(program.value, args) { forEachLine(line -> println(line)) }
+    if (exit.code != 0) fail("${project.name} exited with ${exit.code}")
+  }
+}
