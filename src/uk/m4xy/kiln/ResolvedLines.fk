@@ -10,9 +10,7 @@ module ResolvedLines {
 
   // What lines say, with each folder from folder, the project's.
   read(lines: List<String>, folder: Path): Result<Resolved, String> =
-    lines.filter { it.isNotBlank() }.fold(Ok(Resolved([], []))) { read, line ->
-      read.flatMap { resolved -> withLine(resolved, line.trim(), folder) }
-    }
+    lines.filter { it.isNotBlank() }.foldResult(Resolved([], [])) { resolved, line -> withLine(resolved, line.trim(), folder) }
 
   private withLine(resolved: Resolved, line: String, folder: Path): Result<Resolved, String> = {
     rest = line.substringAfter(" ")

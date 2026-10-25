@@ -4,6 +4,7 @@ import fckt.io.Files.*
 import fckt.io.Processes.*
 import fckt.io.Process
 import fckt.io.FileSystem
+import fckt.text.Digests.*
 import uk.m4xy.kiln.Dependencies.*
 
 // Compiling with fckt and OCaml. The standard library and each library are compiled once, into
@@ -35,7 +36,7 @@ module Compiling {
   // The standard library and the libraries resolved, compiled if they aren't yet.
   @Building linking(resolved: Resolved): Linking = {
     // What one fckt or OCaml compiled, another can't use, so each has its own folder.
-    toolchain = cache().resolve(digest(fcktVersion() + output("ocamlopt", ["-version"])).take(16))
+    toolchain = cache().resolve((fcktVersion() + output("ocamlopt", ["-version"])).md5().take(16))
     standard = standardLibrary(toolchain)
     Linking(standard, resolved.libraries.fold([]) { done, lib -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done, resolved.repositories) })
   }
@@ -45,11 +46,11 @@ module Compiling {
   @Building private fcktVersion(): String = {
     found = output("sh", ["-c", "command -v \"\$1\"", "sh", compiler()]).trim()
     if (found.isEmpty()) fail("there's no ${compiler()} to compile with: put fckt on PATH, or say where it is with FCKT")
-    program = path(realPath(found))
+    program = path(found).canonical()
     // Its folder's and the folder beside it's files: an installed fckt's bin and lib.
     near = program.parent.map { it.listFiles() + it.resolve("../lib").listFilesOrNone() }.getOrElse([])
-    stamp = ([program] + near).map { "${it.value} ${modified(it.value)}" }.joinToString("\n")
-    remembered = cache().resolve("fckt").resolve(digest(stamp).take(16))
+    stamp = ([program] + near).map { "${it.value} ${it.lastModified().millis}" }.joinToString("\n")
+    remembered = cache().resolve("fckt").resolve(stamp.md5().take(16))
     if (remembered.exists()) remembered.readText()
     else {
       version = output(compiler(), ["--version"])
@@ -96,8 +97,8 @@ module Compiling {
   // from, as a digest: fckt and OCaml, the libraries, and each source file's name and text. Where
   // it's what it was, what was compiled then is what would be now.
   @FileSystem inputs(linking: Linking, roots: List<Path>, files: List<Path>): String =
-    digest(([linking.standard.value] + linking.libraries.map { it.folder.value } +
-      (roots.flatMap { sourcesIn(it) } + files).map { "${it.value}\n${it.readText()}" }).joinToString("\n"))
+    ([linking.standard.value] + linking.libraries.map { it.folder.value } +
+      (roots.flatMap { sourcesIn(it) } + files).map { "${it.value}\n${it.readText()}" }).joinToString("\n").md5()
 
   interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap { ["-L", it.folder.resolve("interface").value] }
 
@@ -150,7 +151,7 @@ module Compiling {
   @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
     src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
     files = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }
-    key = digest(([CoordinatesText.of(lib)] + files + uses.map { it.folder.name }).joinToString("\n")).take(12)
+    key = ([CoordinatesText.of(lib)] + files + uses.map { it.folder.name }).joinToString("\n").md5().take(12)
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")
     unit = unitOf(lib.group, lib.name)
     if (!folder.resolve("done").exists()) {
@@ -170,13 +171,4 @@ module Compiling {
 
   // The folder's files, or none if it isn't one.
   @FileSystem private Path.listFilesOrNone(): List<Path> = if (this.isDirectory()) this.listFiles() else []
-
-  // When the file was last changed, in seconds, or 0 if it isn't there.
-  private external modified(path: String): Float = "(fun p -> try (Unix.stat p).Unix.st_mtime with Unix.Unix_error _ -> 0.) path"
-
-  // The file path is, following links: an installed program is often a link to where it is.
-  private external realPath(path: String): String = "(fun p -> try Unix.realpath p with Unix.Unix_error _ -> p) path"
-
-  // A digest of text, in hex: what's compiled from it is kept under it.
-  private external digest(text: String): String = "(fun t -> Digest.to_hex (Digest.string t)) text"
 }

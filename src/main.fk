@@ -40,7 +40,7 @@ type Read(folder: Path, settings: Settings)
 @Console @FileSystem @Process main(args: List<String>) = {
   rest = when (args) {
     ["-C", dir, *more] -> {
-      changeDirectory(dir)
+      changeDirectory(path(dir))
       more
     }
     else -> args
@@ -60,7 +60,7 @@ type Read(folder: Path, settings: Settings)
 // Runs the tasks args names, in the projects the settings here list, then on the project here, and
 // gives the exit code. roots is about this project only, for another that depends on it.
 @Console @FileSystem @Process build(args: List<String>): Int = {
-  here = currentDirectory(Unit)
+  here = workingDirectory().value
   settings = settingsFor(here)
   names = args.takeWhile { it != "--" }
   included = when (settings) {
@@ -69,7 +69,7 @@ type Read(folder: Path, settings: Settings)
   }
   failed = included.find { folder ->
     println("> Project ${folder.value.removePrefix(here + "/")}")
-    system(executable(Unit), ["-C", folder.value] + args) != 0
+    runAttached(executable().value, ["-C", folder.value] + args) != 0
   }
   if (failed.isSome()) 1
   else if (path("build.fk").exists()) script(settings, args)
@@ -109,7 +109,7 @@ type Read(folder: Path, settings: Settings)
     code = compileScript(program, "build.fk", path(".kiln"), [library()] + pluginRoots(read.settings.uses, read.settings.repositories))
     // A plugin's tasks use kiln's library, as kiln() says, from where this kiln has it.
     setEnv("KILN_LIB", library().value)
-    if (code != 0) 1 else system(path(".kiln/build").value, args)
+    if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
   }
 }
 
@@ -187,7 +187,7 @@ type Read(folder: Path, settings: Settings)
 @FileSystem @Process library(): Path = when (env("KILN_LIB")) {
   Some(folder) -> path(folder)
   None -> {
-    home = path(executable(Unit)).parent.getOrElse(path(".")).resolve("..")
+    home = executable().parent.getOrElse(path(".")).resolve("..")
     installed = home.resolve("lib/kiln")
     if (installed.isDirectory()) installed else home.resolve("../src")
   }
@@ -210,17 +210,17 @@ listed(name: String, lines: List<String>): List<String> = {
 @Console @FileSystem @Process pluginRoots(uses: List<Dependency>, repositories: List<Repository>): List<Path> = uses.flatMap { used ->
   when (used) {
     Folder(folder) -> [folder.resolve("src")]
-    Library(lib) -> librarySources(lib, [], repositories)
+    Library(lib) -> librarySources(lib, emptySet(), repositories)
     Kiln -> []
   }
 }.distinct()
 
-@Console @FileSystem @Process librarySources(lib: Coordinates, seen: List<Coordinates>, repositories: List<Repository>): List<Path> =
+@Console @FileSystem @Process librarySources(lib: Coordinates, seen: Set<Coordinates>, repositories: List<Repository>): List<Path> =
   if (seen.contains(lib)) []
   else when (folderOf(lib, repositories)) {
     Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
       when (used) {
-        Library(next) -> librarySources(next, seen + [lib], repositories)
+        Library(next) -> librarySources(next, seen.plus(lib), repositories)
         else -> []
       }
     }
@@ -237,11 +237,3 @@ quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "
 @FileSystem sources(folder: Path): List<Path> =
   if (!folder.isDirectory()) []
   else folder.listFiles().flatMap { f -> if (f.isDirectory()) sources(f) else if (f.extension == "fk") [f] else [] }
-
-private external executable(u: Unit): String = "(fun _ -> Sys.executable_name) u"
-private external currentDirectory(u: Unit): String = "(fun _ -> Sys.getcwd ()) u"
-private @FileSystem external changeDirectory(dir: String): Unit = "Sys.chdir dir"
-// Runs command with args, with the terminal kiln has, and gives its exit code.
-private @Process external system(command: String, args: List<String>): Int = "(fun c a -> Sys.command (Filename.quote_command c a)) command args"
-private @Process external exit(code: Int): Nothing = "exit code"
-private @Process external setEnv(name: String, value: String): Unit = "Unix.putenv name value"

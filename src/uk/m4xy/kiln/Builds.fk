@@ -56,7 +56,7 @@ module Builds {
   // any of the same name, so a script can change any task. A plugin's can't replace another's, or
   // one every project has: the script makes that task itself, to say which it means.
   @Fail tasksOf(project: Project, own: List<Task>, plugins: List<Plugin>): List<Task> = {
-    mine = own.map { it.name }
+    mine = own.map { it.name }.toSet()
     // Each plugin's tasks, with the plugin.
     made = plugins.flatMap { p -> p.tasks(project).map { (p.name(), it) } }.filter { _, t -> !mine.contains(t.name) }
     made.groupBy { _, t -> t.name }.forEach { name, makers ->
