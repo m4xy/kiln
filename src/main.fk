@@ -8,7 +8,6 @@ import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Dependencies.folderOf
 import uk.m4xy.kiln.Dependencies.folderIn
 import uk.m4xy.kiln.Dependencies.published
-import uk.m4xy.kiln.Dependencies.coordinatesText
 
 // kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. First it
 // reads settings.fk, in this folder, or the nearest above that lists this one in its projects:
@@ -226,7 +225,7 @@ listed(name: String, lines: List<String>): List<String> = {
       }
     }
     None -> {
-      println("settings.fk: it uses ${coordinatesText(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
+      println("settings.fk: it uses ${CoordinatesText.of(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
       exit(1)
     }
   }

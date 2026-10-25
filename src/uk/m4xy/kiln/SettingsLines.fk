@@ -38,10 +38,7 @@ module SettingsLines {
       "uses" ->
         if (rest == "kiln") Ok(settings.copy(uses = settings.uses + [Kiln]))
         else if (rest.startsWith("project ")) Ok(settings.copy(uses = settings.uses + [Folder(folder.resolve(rest.removePrefix("project ")))]))
-        else if (rest.startsWith("library ")) when (rest.removePrefix("library ").split(":")) {
-          [group, name, version] -> Ok(settings.copy(uses = settings.uses + [Library(Coordinates(group, name, version))]))
-          else -> Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not ${rest.removePrefix("library ")}")
-        }
+        else if (rest.startsWith("library ")) CoordinatesText.read(rest.removePrefix("library ")).map { lib -> settings.copy(uses = settings.uses + [Library(lib)]) }
         else Error("what build scripts use is a library, a project or kiln, not $rest")
       "project" -> Ok(settings.copy(projects = settings.projects + [folder.resolve(rest)]))
       else -> Error("there's no setting '$line'")

@@ -2,6 +2,8 @@ import fckt.io.Paths.*
 import uk.m4xy.fktests.api.Test
 import uk.m4xy.kiln.*
 import uk.m4xy.kiln.SettingsLines
+import uk.m4xy.kiln.ResolvedLines
+import uk.m4xy.kiln.CoordinatesText
 
 // Settings read back as they were written, with their folders from where settings.fk is.
 @Test settingsAreReadBackAsTheyWereWritten() = {
@@ -24,4 +26,20 @@ import uk.m4xy.kiln.SettingsLines
 @Test whatIsntASettingSaysSo() = {
   assertEquals(Error("there's no setting 'colour blue'"), SettingsLines.read(["repository local", "colour blue"], path("/work")))
   assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), SettingsLines.read(["uses library json"], path("/work")))
+}
+
+// What kiln roots prints is read back as it was, with its folders from the project's.
+@Test whatAProjectIsBuiltFromIsReadBack() = {
+  resolved = Resolved([path("src"), path("/shared/src")], [Coordinates("uk.m4xy", "json", "1.2.0")])
+  assertEquals(
+    Ok(Resolved([path("/work/shop/src"), path("/shared/src")], [Coordinates("uk.m4xy", "json", "1.2.0")])),
+    ResolvedLines.read(ResolvedLines.of(resolved), path("/work/shop")),
+  )
+  // Anything else kiln roots says isn't taken for a folder.
+  assertEquals(Error("kiln roots said 'compiling json', which is neither a root nor a library"), ResolvedLines.read(["root src", "compiling json"], path("/work")))
+}
+
+@Test coordinatesAreReadBack() = {
+  assertEquals(Ok(Coordinates("uk.m4xy", "json", "1.2.0")), CoordinatesText.read(CoordinatesText.of(Coordinates("uk.m4xy", "json", "1.2.0"))))
+  assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), CoordinatesText.read("json"))
 }

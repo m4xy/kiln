@@ -121,7 +121,7 @@ module Compiling {
   @Building private compileLibrary(toolchain: Path, standard: Path, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>, repositories: List<Repository>): List<CompiledLibrary> =
     if (done.any(c -> c.coordinates == lib)) done
     else {
-      if (through.contains(lib)) fail("${(through + [lib]).map(c -> coordinatesText(c)).joinToString(" uses ")}, so none can be compiled first")
+      if (through.contains(lib)) fail("${(through + [lib]).map(c -> CoordinatesText.of(c)).joinToString(" uses ")}, so none can be compiled first")
       uses = usedBy(lib, chosen, repositories)
       before = uses.fold(done, (all, used) -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all, repositories))
       // What it uses, and what they do: their interfaces' types are its interface's.
@@ -148,11 +148,11 @@ module Compiling {
   @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
     src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
     files = sourcesIn(src).map(f -> "${f.relativeTo(src).getOrElse(f).value}\n${f.readText()}")
-    key = digest(([coordinatesText(lib)] + files + uses.map(u -> u.folder.name)).joinToString("\n")).take(12)
+    key = digest(([CoordinatesText.of(lib)] + files + uses.map(u -> u.folder.name)).joinToString("\n")).take(12)
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")
     unit = unitOf(lib.group, lib.name)
     if (!folder.resolve("done").exists()) {
-      println("  compiling ${coordinatesText(lib)}")
+      println("  compiling ${CoordinatesText.of(lib)}")
       folder.delete()
       folder.makeDirs()
       compilePackages(Linking(standard, uses), [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))

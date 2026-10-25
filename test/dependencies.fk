@@ -56,8 +56,8 @@ import uk.m4xy.fktests.api.Test
   write(dir, "units/build.fk", "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.10.0\")\n")
   assertEquals(0, kiln(units, ["publishLocal"]).code)
   write(dir, "pricing/build.fk", "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n")
-  roots = kiln(dir.resolve("pricing"), ["roots"]).value.split("\n").filter(line -> !line.isBlank())
-  assertEquals(["src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0"], roots)
+  roots = kiln(dir.resolve("pricing"), ["roots"]).value.lines().filter { it.isNotBlank() }
+  assertEquals(["root src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0"], roots)
   // money, compiled with units 1.10.0 now.
   write(dir, "pricing/src/main.fk", "import pricing.Prices\nmain() = println(Prices.label(4))\n")
   expectContains(kiln(dir.resolve("pricing"), ["run"]).value, "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p")

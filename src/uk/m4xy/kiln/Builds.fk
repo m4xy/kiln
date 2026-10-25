@@ -34,9 +34,7 @@ module Builds {
       tasks = tasksOf(project, tasks, plugins)
       // Only these, for another project that depends on this one.
       if (names == ["roots"]) {
-        resolved = resolve(project)
-        resolved.roots.forEach(root -> println(root.value))
-        resolved.libraries.forEach(lib -> println("library ${coordinatesText(lib)}"))
+        ResolvedLines.of(resolve(project)).forEach { line -> println(line) }
       }
       else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
       else {
@@ -159,11 +157,11 @@ module Builds {
     target.delete()
     project.sources.forEach(root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)))
     target.resolve("dependencies").writeText(project.dependencies.flatMap(d -> when (d) {
-      Library(lib) -> ["${coordinatesText(lib)}\n"]
+      Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
       Folder(_) -> []
       Kiln -> []
     }).joinToString(""))
-    println("  published ${coordinatesText(coordinates)} to ${target.value}")
+    println("  published ${CoordinatesText.of(coordinates)} to ${target.value}")
   }
 
   // For editors, in .kiln/paths: the folders the project's packages are in, a line each, and the

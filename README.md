@@ -68,7 +68,7 @@ isn't compiled again; `kiln clean` forgets.
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
 | `publishLocal` | Compiles and checks, then publishes the project as a library to the local repository |
-| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses |
+| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses: `root src`, `library uk.m4xy:json:1.2.0`, a line each, as `ResolvedLines` writes and reads them |
 | `tasks` | Lists the tasks |
 
 ## build.fk

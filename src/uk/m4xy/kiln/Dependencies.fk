@@ -8,9 +8,9 @@ import fckt.io.FileSystem
 // What a project depends on, and where their packages are.
 module Dependencies {
   // A library from the local repository, as group:name:version: library("uk.m4xy:json:1.2.0").
-  library(coordinates: String): Dependency = when (coordinates.split(":")) {
-    [group, name, version] -> Library(Coordinates(group, name, version))
-    else -> error("a library is group:name:version, as uk.m4xy:json:1.2.0, not $coordinates")
+  library(coordinates: String): Dependency = when (CoordinatesText.read(coordinates)) {
+    Ok(lib) -> Library(lib)
+    Error(problem) -> error(problem)
   }
 
   // Another project, from its folder: its packages as they are, with what it depends on.
@@ -26,8 +26,6 @@ module Dependencies {
     None -> fail("KILN_LIB doesn't say where kiln's library is; kiln sets it when it runs a build script")
   }
 
-  // group:name:version.
-  coordinatesText(lib: Coordinates): String = "${lib.group}:${lib.name}:${lib.version}"
 
   // Where publishLocal puts libraries: ~/.kiln/repository, or KILN_REPOSITORY if it's set.
   @Process repository(): Path = when (env("KILN_REPOSITORY")) {
@@ -69,7 +67,7 @@ module Dependencies {
       if (found.contains(lib)) libraries(rest, found, repositories)
       else {
         if (folderOf(lib, repositories).isNone()) {
-          fail("there's no ${coordinatesText(lib)} in ${repositories.map(r -> folderIn(r).value).joinToString(" or ")}: run kiln publishLocal in its project")
+          fail("there's no ${CoordinatesText.of(lib)} in ${repositories.map(r -> folderIn(r).value).joinToString(" or ")}: run kiln publishLocal in its project")
         }
         libraries(rest + published(lib, repositories), found + [lib], repositories)
       }
@@ -107,20 +105,15 @@ module Dependencies {
     Kiln -> []
   })
 
-  // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints a
-  // folder a line, and a library as library and its coordinates.
+  // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints
+  // them as ResolvedLines writes them.
   @FileSystem @Process private folderResolved(folder: Path): Resolved = {
     if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
     exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "roots"])
     if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
-    lines = exit.value.lines().map(line -> line.trim()).filter(line -> line.isNotEmpty())
-    Resolved(
-      lines.filter(line -> !line.startsWith("library ")).map(line -> folder.resolve(line)),
-      lines.filter(line -> line.startsWith("library ")).flatMap(line -> when (library(line.removePrefix("library "))) {
-        Library(lib) -> [lib]
-        Folder(_) -> []
-        Kiln -> []
-      }),
-    )
+    when (ResolvedLines.read(exit.value.lines(), folder)) {
+      Ok(resolved) -> resolved
+      Error(problem) -> fail("couldn't read the project in ${folder.value}: $problem")
+    }
   }
 }
