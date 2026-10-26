@@ -44,22 +44,25 @@ module Compiling {
     Linking(core, resolved.libraries.fold(std) { done, lib -> compileLibrary(toolchain, core, std, resolved.libraries, lib, [], done, resolved.repositories) })
   }
 
-  // What fckt --version says, remembered for the fckt that said it, as asking means starting a JVM:
+  // What fckt --version says.
+  @Building private fcktVersion(): String = fcktSays(["--version"])
+
+  // What fckt says to args, remembered for the fckt that said it, as asking means starting a JVM:
   // asked again only when fckt, or what's beside it, as its jars, changes.
-  @Building private fcktVersion(): String = {
-    found = output("sh", ["-c", "command -v \"\$1\"", "sh", compiler()]).trim()
+  @Building private fcktSays(args: List<String>): String = {
+    found = output("sh", ["-c", "command -v \"\$1\" || true", "sh", compiler()]).trim()
     if (found.isEmpty()) fail("there's no ${compiler()} to compile with: put fckt on PATH, or say where it is with FCKT")
     program = path(found).canonical()
     // Its folder's and the folder beside it's files: an installed fckt's bin and lib.
     near = program.parent.map { it.listFiles() + it.resolve("../lib").listFilesOrNone() }.getOrElse([])
-    stamp = ([program] + near).map { "${it.value} ${it.lastModified().millis}" }.joinToString("\n")
+    stamp = ([program] + near).map { "${it.value} ${it.lastModified().millis}" }.joinToString("\n") + "\n" + args.joinToString(" ")
     remembered = cache().resolve("fckt").resolve(stamp.md5().take(16))
     if (remembered.exists()) remembered.readText()
     else {
-      version = output(compiler(), ["--version"])
+      said = output(compiler(), args)
       cache().resolve("fckt").makeDirs()
-      remembered.writeText(version)
-      version
+      remembered.writeText(said)
+      said
     }
   }
 
@@ -126,15 +129,17 @@ module Compiling {
   }
 
   // The standard library, fckt:std, compiled once, with the core, from the source beside the fckt
-  // that compiles it, so it's always that fckt's: Fckt_std, in toolchain's std.
+  // that compiles it, so it's always that fckt's: Fckt_std, in toolchain's std, under a digest of
+  // that source, as it can change while fckt doesn't.
   @Building private standardLibrary(toolchain: Path, core: Path): CompiledLibrary = {
-    folder = toolchain.resolve("std")
+    src = path(fcktSays(["--std-path"]).trim())
+    key = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }.joinToString("\n").md5().take(16)
+    folder = toolchain.resolve("std-$key")
     unit = "Fckt_std"
     if (!folder.resolve("done").exists()) {
       println("  compiling the standard library")
       folder.delete()
       folder.makeDirs()
-      src = path(output(compiler(), ["--std-path"]).trim())
       compilePackages(Linking(core, []), [src], [src], packagesIn(src, src), unit, folder.resolve("fckt_std.ml"), folder.resolve("interface"))
       folder.resolve("done").writeText("")
     }

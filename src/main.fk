@@ -226,7 +226,7 @@ listed(name: String, lines: List<String>): List<String> = {
   else when (folderOf(lib, repositories)) {
     Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
       when (used) {
-        Library(next) -> librarySources(next, seen.plus(lib), repositories)
+        Library(next) -> librarySources(next, seen + lib, repositories)
         else -> []
       }
     }
