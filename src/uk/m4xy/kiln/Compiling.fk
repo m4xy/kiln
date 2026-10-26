@@ -6,8 +6,10 @@ import fckt.io.Process
 import fckt.io.FileSystem
 import fckt.text.Digests.*
 import uk.m4xy.kiln.Dependencies.*
+import fckt.effects.Fail
+import fckt.io.Console
 
-// Compiling with fckt and OCaml. The standard library and each library are compiled once, into
+// Compiling with fckt and OCaml. fckt's core, the standard library and each library are compiled once, into
 // kiln's cache, for this fckt and OCaml; a program is checked against the libraries' interfaces,
 // compiled on its own, and linked with them.
 module Compiling {
@@ -33,12 +35,13 @@ module Compiling {
     None -> path(env("HOME").getOrElse(".")).resolve(".kiln/cache")
   }
 
-  // The standard library and the libraries resolved, compiled if they aren't yet.
+  // fckt's core, the standard library and the libraries resolved, compiled if they aren't yet.
   @Building linking(resolved: Resolved): Linking = {
     // What one fckt or OCaml compiled, another can't use, so each has its own folder.
     toolchain = cache().resolve((fcktVersion() + output("ocamlopt", ["-version"])).md5().take(16))
-    standard = standardLibrary(toolchain)
-    Linking(standard, resolved.libraries.fold([]) { done, lib -> compileLibrary(toolchain, standard, resolved.libraries, lib, [], done, resolved.repositories) })
+    core = coreOf(toolchain)
+    std = if (resolved.standardLibrary) [standardLibrary(toolchain, core)] else []
+    Linking(core, resolved.libraries.fold(std) { done, lib -> compileLibrary(toolchain, core, std, resolved.libraries, lib, [], done, resolved.repositories) })
   }
 
   // What fckt --version says, remembered for the fckt that said it, as asking means starting a JVM:
@@ -69,23 +72,23 @@ module Compiling {
   // a program.
   @Building internal compileProgram(linking: Linking, own: List<Path>, roots: List<Path>, file: Path, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate"] + sourceArgs(own, roots) + interfaces(libraries))
+    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate", "--no-std"] + sourceArgs(own, roots) + interfaces(libraries))
     linkProgram(linking, ml, program)
   }
 
-  // The OCaml at ml, linked with the standard library and the libraries, to program.
+  // The OCaml at ml, linked with the core and the libraries, the standard library among them, to program.
   @Building linkProgram(linking: Linking, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.standard.value] + libraries.flatMap { ["-I", it.folder.value] } +
-      ["unix.cmxa", linking.standard.resolve("fckt_std.cmx").value] + libraries.map { it.folder.resolve("${it.unit}.cmx").value } +
+    runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.core.value] + libraries.flatMap { ["-I", it.folder.value] } +
+      ["unix.cmxa", linking.core.resolve("fckt_core.cmx").value] + libraries.map { it.folder.resolve("${it.unit}.cmx").value } +
       [ml.value, "-o", program.value])
   }
 
   // packages, from roots, as a library: OCaml at ml, which is the module unit, and its interface,
   // which programs that use it are checked against, in folder interface.
   @Building internal compilePackages(linking: Linking, own: List<Path>, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
-    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages)
-    runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.standard.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
+    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value, "--no-std"] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages)
+    runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.core.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
   }
 
   // The OCaml module a library is: uk_m4xy_json for uk.m4xy:json.
@@ -103,37 +106,53 @@ module Compiling {
   // from, as a digest: fckt and OCaml, the libraries, and each source file's name and text. Where
   // it's what it was, what was compiled then is what would be now.
   @FileSystem inputs(linking: Linking, roots: List<Path>, files: List<Path>): String =
-    ([linking.standard.value] + linking.libraries.map { it.folder.value } +
+    ([linking.core.value] + linking.libraries.map { it.folder.value } +
       (roots.flatMap { sourcesIn(it) } + files).map { "${it.value}\n${it.readText()}" }).joinToString("\n").md5()
 
   interfaces(libraries: List<CompiledLibrary>): List<String> = libraries.flatMap { ["-L", it.folder.resolve("interface").value] }
 
-  // The standard library, compiled once: fckt_std, in toolchain's std.
-  @Building private standardLibrary(toolchain: Path): Path = {
-    folder = toolchain.resolve("std")
+  // fckt's core, compiled once: fckt_core, in toolchain's core.
+  @Building private coreOf(toolchain: Path): Path = {
+    folder = toolchain.resolve("core")
     if (!folder.resolve("done").exists()) {
-      println("  compiling the standard library")
       folder.delete()
       folder.makeDirs()
-      ml = folder.resolve("fckt_std.ml")
-      runOrFail(compiler(), ["--standard", "-o", ml.value])
+      ml = folder.resolve("fckt_core.ml")
+      runOrFail(compiler(), ["--core", "-o", ml.value])
       runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", ml.value])
       folder.resolve("done").writeText("")
     }
     folder
   }
 
+  // The standard library, fckt:std, compiled once, with the core, from the source beside the fckt
+  // that compiles it, so it's always that fckt's: Fckt_std, in toolchain's std.
+  @Building private standardLibrary(toolchain: Path, core: Path): CompiledLibrary = {
+    folder = toolchain.resolve("std")
+    unit = "Fckt_std"
+    if (!folder.resolve("done").exists()) {
+      println("  compiling the standard library")
+      folder.delete()
+      folder.makeDirs()
+      src = path(output(compiler(), ["--std-path"]).trim())
+      compilePackages(Linking(core, []), [src], [src], packagesIn(src, src), unit, folder.resolve("fckt_std.ml"), folder.resolve("interface"))
+      folder.resolve("done").writeText("")
+    }
+    CompiledLibrary(Coordinates("fckt", "std", fcktVersion()), folder, unit)
+  }
+
   // done, with lib compiled after the libraries it uses, unless it is already. Of those chosen,
   // the versions it uses; through, the libraries that led to it, which it can't use in turn.
-  @Building private compileLibrary(toolchain: Path, standard: Path, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>, repositories: List<Repository>): List<CompiledLibrary> =
+  // std, the standard library, if there is one, every library is compiled with.
+  @Building private compileLibrary(toolchain: Path, core: Path, std: List<CompiledLibrary>, chosen: List<Coordinates>, lib: Coordinates, through: List<Coordinates>, done: List<CompiledLibrary>, repositories: List<Repository>): List<CompiledLibrary> =
     if (done.any { it.coordinates == lib }) done
     else {
       if (through.contains(lib)) fail("${(through + [lib]).map { CoordinatesText.of(it) }.joinToString(" uses ")}, so none can be compiled first")
       uses = usedBy(lib, chosen, repositories)
-      before = uses.fold(done) { all, used -> compileLibrary(toolchain, standard, chosen, used, through + [lib], all, repositories) }
+      before = uses.fold(done) { all, used -> compileLibrary(toolchain, core, std, chosen, used, through + [lib], all, repositories) }
       // What it uses, and what they do: their interfaces' types are its interface's.
       needed = closure(uses, chosen, [], repositories)
-      before + [compileOne(toolchain, standard, lib, before.filter { needed.contains(it.coordinates) }, repositories)]
+      before + [compileOne(toolchain, core, lib, std + before.filter { needed.contains(it.coordinates) }, repositories)]
     }
 
   // Of those chosen, the versions of the libraries lib says it uses.
@@ -154,7 +173,7 @@ module Compiling {
 
   // lib's packages, compiled with the libraries it uses: once for each source it's published
   // with, and each set of those, so publishing it again compiles it again.
-  @Building private compileOne(toolchain: Path, standard: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
+  @Building private compileOne(toolchain: Path, core: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
     src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
     files = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }
     key = ([CoordinatesText.of(lib)] + files + uses.map { it.folder.name }).joinToString("\n").md5().take(12)
@@ -164,7 +183,7 @@ module Compiling {
       println("  compiling ${CoordinatesText.of(lib)}")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(standard, uses), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
+      compilePackages(Linking(core, uses), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
       folder.resolve("done").writeText("")
     }
     CompiledLibrary(lib, folder, unit)

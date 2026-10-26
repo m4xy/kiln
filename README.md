@@ -86,8 +86,14 @@ project = Project(
   main = path("src/main.fk"),
   sources = [path("src")],
   output = path("build"),
+  standardLibrary = true,         // fckt:std, which every project has unless it says not
 )
 ```
+
+Every project has fckt's standard library, `fckt:std`, the one beside the fckt it's built with,
+which kiln compiles once and gives it as it does any library: its files import what they use of it,
+`import fckt.io.Console`. A build script needn't import what it needs to say what its project is,
+`uk.m4xy.kiln.*`, paths, files and processes, nor `Console` and `Fail`.
 
 A task is a `Task(name, description, dependsOn, partOf, action)`, whose action is fckt that may
 print, use files and run programs (`@Building`), given the `Build`: the project, and what follows
@@ -229,9 +235,10 @@ program, `.kiln/build`, again only when the script or kiln changes, and runs it.
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.
 
-Programs are compiled separately: the standard library (`fckt --standard`) and each library
-(`fckt --library`) once, with `ocamlopt -c`, into the cache, in a folder for each fckt and OCaml;
-then each program on its own (`fckt -L`), which is linked with them. `fckt --version`, which says
+Programs are compiled separately: fckt's core (`fckt --core`), the standard library, from the source
+`fckt --std-path` says is beside fckt, and each library (`fckt --library`) once, with `ocamlopt
+-c`, into the cache, in a folder for each fckt and OCaml; then each program on its own (`fckt -L`),
+which is linked with them. `fckt --version`, which says
 which fckt compiled them, is asked once for each fckt, as it starts a JVM: a build with nothing to
 do takes a few hundredths of a second. Each compile also writes `.kiln/paths`: the
 project's source folders and its libraries' interfaces, where fckt's IntelliJ plugin finds them.

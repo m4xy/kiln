@@ -4,6 +4,7 @@ import fckt.io.Files.*
 import fckt.io.Processes.*
 import fckt.io.Process
 import fckt.io.FileSystem
+import fckt.effects.Fail
 
 // What a project depends on, and where their packages are.
 module Dependencies {
@@ -57,6 +58,7 @@ module Dependencies {
       (project.sources + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
       chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
       project.repositories,
+      project.standardLibrary,
     )
   }
 

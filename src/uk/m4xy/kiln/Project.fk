@@ -19,4 +19,7 @@ type Project(
   output: Path = path("build"),
   // Where its libraries are looked for, in order; kiln sets it from settings.fk.
   repositories: List<Repository> = [Local],
+  // Whether it has the standard library, fckt:std, the one beside the fckt it's built with, as
+  // every project does unless it says otherwise: the standard library's own doesn't.
+  standardLibrary: Boolean = true,
 )

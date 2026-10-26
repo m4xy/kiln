@@ -16,7 +16,7 @@ import uk.m4xy.fktests.api.Test
   write(dir, "pricing/build.fk", "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\")])\n")
   write(dir, "pricing/src/pricing/Prices.fk", "import uk.m4xy.money.Money\n\nmodule Prices {\n  label(pounds: Int): String = \"costs \${Money.format(pounds)}\"\n}\n")
   write(dir, "shop/build.fk", "project = Project(name = \"shop\", dependencies = [projectAt(\"../pricing\")])\n")
-  write(dir, "shop/src/main.fk", "import pricing.Prices\nmain() = println(Prices.label(3))\n")
+  write(dir, "shop/src/main.fk", "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(3))\n")
   units = dir.resolve("units")
   money = dir.resolve("money")
   // Nothing's published yet.
@@ -36,7 +36,8 @@ import uk.m4xy.fktests.api.Test
   // Where editors find its packages and libraries.
   paths = dir.resolve("shop/.kiln/paths").readLines()
   assertEquals(["source src", "source ../pricing/src"], paths.filter { it.startsWith("source ") })
-  assertEquals(2, paths.filter { it.startsWith("library ") && it.endsWith("/interface") }.size)
+  // The standard library's interface, and units' and money's.
+  assertEquals(3, paths.filter { it.startsWith("library ") && it.endsWith("/interface") }.size)
   // Published again, it's compiled again.
   write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n")
   assertEquals(0, kiln(units, ["publishLocal"]).code)
@@ -59,6 +60,6 @@ import uk.m4xy.fktests.api.Test
   roots = kiln(dir.resolve("pricing"), ["roots"]).value.lines().filter { it.isNotBlank() }
   assertEquals(["root src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0"], roots)
   // money, compiled with units 1.10.0 now.
-  write(dir, "pricing/src/main.fk", "import pricing.Prices\nmain() = println(Prices.label(4))\n")
+  write(dir, "pricing/src/main.fk", "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(4))\n")
   expectContains(kiln(dir.resolve("pricing"), ["run"]).value, "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p")
 }

@@ -11,7 +11,7 @@ prices = "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n"
 @Test @FileSystem @Process tasksRunAfterWhatTheyDependOn() = {
   shop = projects("shop")
   write(shop, "src/pricing/Prices.fk", prices)
-  write(shop, "src/main.fk", "import pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
+  write(shop, "src/main.fk", "import fckt.io.Console\nimport pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
   write(shop, "build.fk", """project = Project(name = "shop", version = "1.2.0")
 
 tasks = [
@@ -110,7 +110,8 @@ tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
   write(dir, "greeting/build.fk", "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
   write(dir, "greeting/src/uk/m4xy/greeting/Words.fk", "spec Words {\n  greeting(): String\n}\n")
   write(dir, "greeting/src/uk/m4xy/greeting/Hello.fk", "module Hello : Words {\n  greeting(): String = \"hello\"\n}\n")
-  write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import uk.m4xy.kiln.*
+  write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import fckt.io.Console
+import uk.m4xy.kiln.*
 
 module Greetings(W: Words = Hello) : Plugin {
   name(): String = "greetings"
@@ -156,7 +157,7 @@ module Cleaning : Plugin {
   path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(dir.resolve("team/uk.m4xy/words/1.0.0"))
   write(dir, "team/uk.m4xy/words/1.0.0/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"team\"\n}\n")
   write(dir, "shop/build.fk", "project = Project(name = \"shop\", dependencies = [library(\"uk.m4xy:words:1.0.0\")])\n")
-  write(dir, "shop/src/main.fk", "import uk.m4xy.words.Words\n\nmain() = println(Words.word)\n")
+  write(dir, "shop/src/main.fk", "import fckt.io.Console\nimport uk.m4xy.words.Words\n\nmain() = println(Words.word)\n")
   order = (repositories: String) -> write(dir, "shop/settings.fk", "settings = Settings(repositories = [$repositories])\n")
   order("At(path(\"../team\")), Local")
   expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nteam\n")

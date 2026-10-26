@@ -3,4 +3,11 @@ import fckt.io.Path
 // What a project's programs are built from: the folders their packages are in, the project's and
 // its folder projects', and the libraries they use, in the versions chosen, from the first of
 // repositories that has each.
-type Resolved(roots: List<Path>, libraries: List<Coordinates>, repositories: List<Repository> = [Local])
+type Resolved(
+  roots: List<Path>,
+  libraries: List<Coordinates>,
+  repositories: List<Repository> = [Local],
+  // Whether its programs have the standard library, fckt:std, which kiln gives every project unless
+  // it says it goes without.
+  standardLibrary: Boolean = true,
+)

@@ -7,6 +7,11 @@ import fckt.io.Process
 import fckt.io.FileSystem
 import uk.m4xy.kiln.Dependencies.*
 import uk.m4xy.kiln.Compiling.*
+import fckt.effects.Failure.attempt
+import fckt.io.Console
+import fckt.effects.Fail
+import fckt.collections.Sets.*
+import fckt.collections.Maps.*
 
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
 // calls runBuild(project, args) with what follows it on the command line, and the script's tasks

@@ -8,6 +8,9 @@ import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Dependencies.folderOf
 import uk.m4xy.kiln.Dependencies.folderIn
 import uk.m4xy.kiln.Dependencies.published
+import fckt.io.Console
+import fckt.collections.Sets.emptySet
+import fckt.collections.Sets.Set
 
 // kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. First it
 // reads settings.fk, in this folder, or the nearest above that lists this one in its projects:
@@ -28,10 +31,12 @@ libraries are looked for in, in order; what build scripts use, for their plugins
 built with the one in its folder. What follows -- goes to the tasks, as to the program for run.
 FCKT says where fckt is, if the shell can't find it."""
 
-// What a build script imports without saying: what it needs to say what its project is.
+// What a build script imports without saying: what it needs to say what its project is, and to
+// print and fail.
 buildImports = [
   "uk.m4xy.kiln.*", "uk.m4xy.kiln.Builds.*", "uk.m4xy.kiln.Dependencies.*",
   "fckt.io.Path", "fckt.io.FileSystem", "fckt.io.Process", "fckt.io.Paths.*", "fckt.io.Files.*", "fckt.io.Processes.*",
+  "fckt.io.Console", "fckt.effects.Fail",
 ]
 
 // What settings.fk in folder says, with its folders from there.
