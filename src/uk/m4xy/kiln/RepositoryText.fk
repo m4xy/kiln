@@ -1,0 +1,17 @@
+import fckt.io.Paths.*
+import fckt.text.Format
+
+// A repository as text: local, or at its folder, as written, as at ../team.
+module RepositoryText : Format {
+  type T = Repository
+
+  of(value: Repository): String = when (value) {
+    Local -> "local"
+    At(folder) -> "at ${folder.value}"
+  }
+
+  read(text: String): Result<Repository, String> =
+    if (text == "local") Ok(Local)
+    else if (text.startsWith("at ")) Ok(At(path(text.removePrefix("at "))))
+    else Error("a repository is local or at a folder, not $text")
+}

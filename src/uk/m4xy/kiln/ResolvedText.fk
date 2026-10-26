@@ -1,0 +1,30 @@
+import fckt.io.Paths.*
+import fckt.text.Format
+
+// What a project is built from as it passes to another that depends on it, which runs kiln roots in
+// its folder and reads what it prints: a line for each folder its packages are in, each library it
+// uses, and each repository, with folders as written, which Folders makes whole from the project's;
+// and whether it goes without the standard library.
+internal module ResolvedText : Format {
+  type T = Resolved
+
+  of(value: Resolved): String =
+    (value.roots.map { "root ${it.value}" } +
+      value.libraries.map { "library ${CoordinatesText.of(it)}" } +
+      value.repositories.map { "repository ${RepositoryText.of(it)}" } +
+      (if (value.standardLibrary) [] else ["without the standard library"])).joinToString("\n")
+
+  read(text: String): Result<Resolved, String> =
+    text.lines().filter { it.isNotBlank() }.foldResult(Resolved([], [], [], true)) { resolved, line -> withLine(resolved, line.trim()) }
+
+  private withLine(resolved: Resolved, line: String): Result<Resolved, String> = {
+    rest = line.substringAfter(" ")
+    if (line == "without the standard library") Ok(resolved.copy(standardLibrary = false))
+    else when (line.substringBefore(" ")) {
+      "root" -> Ok(resolved.copy(roots = resolved.roots + [path(rest)]))
+      "library" -> CoordinatesText.read(rest).map { resolved.copy(libraries = resolved.libraries + [it]) }
+      "repository" -> RepositoryText.read(rest).map { resolved.copy(repositories = resolved.repositories + [it]) }
+      else -> Error("kiln roots said '$line', which is neither a root, a library nor a repository")
+    }
+  }
+}

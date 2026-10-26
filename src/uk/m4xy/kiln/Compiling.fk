@@ -195,7 +195,7 @@ module Compiling {
   }
 
   // The .fk files in folder and those in it.
-  @FileSystem private sourcesIn(folder: Path): List<Path> =
+  @FileSystem internal sourcesIn(folder: Path): List<Path> =
     if (!folder.isDirectory()) []
     else folder.listFiles().flatMap { f -> if (f.isDirectory()) sourcesIn(f) else if (f.extension == "fk") [f] else [] }
 

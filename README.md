@@ -68,7 +68,7 @@ isn't compiled again; `kiln clean` forgets.
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
 | `publishLocal` | Compiles and checks, then publishes the project as a library to the local repository |
-| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses: `root src`, `library uk.m4xy:json:1.2.0`, a line each, as `ResolvedLines` writes and reads them |
+| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses: `root src`, `library uk.m4xy:json:1.2.0`, a line each, then its repositories, as `ResolvedText` writes and reads them |
 | `tasks` | Lists the tasks |
 
 ## build.fk
@@ -226,12 +226,17 @@ module Prices {
 
 ## How it works
 
-kiln compiles `settings.fk` with a `main` that prints what it says, a line each as
-`uk.m4xy.kiln.SettingsLines.of` writes them, runs it, and reads them back into the same `Settings`
-with `SettingsLines.read`; then it adds a
+kiln asks `fckt --declarations` what `settings.fk` and `build.fk` declare, as fckt reads them, and
+remembers it until they change. It compiles `settings.fk` with a `main` that prints what it says, a
+line each as `uk.m4xy.kiln.SettingsText` writes them, runs it, and reads them back into the same
+`Settings`, whose folders `Folders` then makes whole from where `settings.fk` is. Each of kiln's
+texts, `SettingsText`, `ResolvedText` and their parts, follows the standard library's `Format`, so
+each reads back what it writes, which one test checks of them all. Then it adds a
 `main` to the build script, which hands `project`, with the settings' repositories, and `tasks` and
 `plugins` if it declares them, to `uk.m4xy.kiln.Builds.runBuild`. It compiles that with `fckt --import ...` and `ocamlopt` to a
-program, `.kiln/build`, again only when the script or kiln changes, and runs it. The tasks are fckt too, in
+program, `.kiln/build`, again only when the script or kiln changes, and runs it. That's
+`uk.m4xy.kiln.launch`, internal to kiln, which build scripts don't see; `src/main.fk` reads the
+command line. The tasks are fckt too, in
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.
 

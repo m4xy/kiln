@@ -110,13 +110,13 @@ module Dependencies {
   }
 
   // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints
-  // them as ResolvedLines writes them.
+  // them as ResolvedText writes them.
   @FileSystem @Process private folderResolved(folder: Path): Resolved = {
     if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
     exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "roots"])
     if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
-    when (ResolvedLines.read(exit.value.lines(), folder)) {
-      Ok(resolved) -> resolved
+    when (ResolvedText.read(exit.value)) {
+      Ok(resolved) -> resolved.from(folder)
       Error(problem) -> fail("couldn't read the project in ${folder.value}: $problem")
     }
   }

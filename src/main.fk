@@ -1,25 +1,14 @@
-import fckt.io.Path
 import fckt.io.FileSystem
 import fckt.io.Process
+import fckt.io.Console
 import fckt.io.Paths.*
 import fckt.io.Files.*
 import fckt.io.Processes.*
-import uk.m4xy.kiln.*
-import uk.m4xy.kiln.Dependencies.folderOf
-import uk.m4xy.kiln.Dependencies.folderIn
-import uk.m4xy.kiln.Dependencies.published
-import fckt.io.Console
-import fckt.collections.Sets.emptySet
-import fckt.collections.Sets.Set
+import uk.m4xy.kiln.launch.Launch
+import uk.m4xy.kiln.launch.version
 
-// kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another. First it
-// reads settings.fk, in this folder, or the nearest above that lists this one in its projects:
-// where libraries are looked for, what build scripts use, and which projects are built with this
-// one. Then it adds a main to the build script, which hands project, with its tasks and plugins, to
-// uk.m4xy.kiln's runBuild, compiles that with fckt and ocamlopt to .kiln/build, again only when it
-// changes, and runs it.
-
-version = "0.1.0"
+// kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another, as Launch
+// does.
 
 usage = """usage: kiln [-C <dir>] <task>... [-- <args>]
 
@@ -30,17 +19,6 @@ applies. settings.fk, beside it or above, declares settings = Settings(...): the
 libraries are looked for in, in order; what build scripts use, for their plugins; and the projects
 built with the one in its folder. What follows -- goes to the tasks, as to the program for run.
 FCKT says where fckt is, if the shell can't find it."""
-
-// What a build script imports without saying: what it needs to say what its project is, and to
-// print and fail.
-buildImports = [
-  "uk.m4xy.kiln.*", "uk.m4xy.kiln.Builds.*", "uk.m4xy.kiln.Dependencies.*",
-  "fckt.io.Path", "fckt.io.FileSystem", "fckt.io.Process", "fckt.io.Paths.*", "fckt.io.Files.*", "fckt.io.Processes.*",
-  "fckt.io.Console", "fckt.effects.Fail",
-]
-
-// What settings.fk in folder says, with its folders from there.
-type Read(folder: Path, settings: Settings)
 
 @Console @FileSystem @Process main(args: List<String>) = {
   rest = when (args) {
@@ -57,189 +35,7 @@ type Read(folder: Path, settings: Settings)
     println(usage)
     0
   } else {
-    build(rest)
+    Launch.build(rest)
   }
   exit(code)
 }
-
-// Runs the tasks args names, in the projects the settings here list, then on the project here, and
-// gives the exit code. roots is about this project only, for another that depends on it.
-@Console @FileSystem @Process build(args: List<String>): Int = {
-  here = workingDirectory().value
-  settings = settingsFor(here)
-  names = args.takeWhile { it != "--" }
-  included = when (settings) {
-    Some(read) -> if (read.folder == path(here) && !names.contains("roots")) read.settings.projects else []
-    None -> []
-  }
-  failed = included.find { folder ->
-    println("> Project ${folder.value.removePrefix(here + "/")}")
-    runAttached(executable().value, ["-C", folder.value] + args) != 0
-  }
-  if (failed.isSome()) 1
-  else if (path("build.fk").exists()) script(settings, args)
-  else if (included.isNotEmpty()) 0
-  else {
-    println("kiln: there's no build.fk here, so no project to build")
-    2
-  }
-}
-
-// The build script here, compiled with what the settings say it uses, run with args.
-@Console @FileSystem @Process script(settings: Option<Read>, args: List<String>): Int = {
-  lines = path("build.fk").readLines()
-  // What the script declares, by the names its lines start with.
-  declares = (name: String) -> lines.any { it.startsWith("$name =") || it.startsWith("$name:") }
-  if (declares("main")) {
-    println("build.fk: it declares project, and kiln runs it, so it can't have a main")
-    1
-  } else if (!declares("project")) {
-    println("build.fk: it must declare project = Project(name = \"...\")")
-    1
-  } else if (declares("uses") || listed("plugins", lines).isNotEmpty()) {
-    println("build.fk: the libraries and projects it's compiled with go in settings.fk, settings = Settings(uses = [...]); plugins = [...] applies their plugins, as modules")
-    1
-  } else {
-    read = settings.getOrElse(Read(path("."), Settings()))
-    given = ["tasks", "plugins"].filter(declares).map { ", $it = $it" }.joinToString("")
-    repositories = read.settings.repositories.map { r ->
-      when (r) {
-        Local -> "Local"
-        At(folder) -> "At(path(${quoted(folder.value)}))"
-      }
-    }.joinToString(", ")
-    // The script, then its main, so the script's lines keep their numbers: its folders aren't
-    // packages, as src would be if the project's folder were one of fckt's.
-    program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project.copy(repositories = [$repositories]), args$given)\n"
-    code = compileScript(program, "build.fk", path(".kiln"), [library()] + pluginRoots(read.settings.uses, read.settings.repositories))
-    // A plugin's tasks use kiln's library, as kiln() says, from where this kiln has it.
-    setEnv("KILN_LIB", library().value)
-    if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
-  }
-}
-
-// The settings that apply here: settings.fk here, or in the nearest folder above that has one, if
-// it lists this one in its projects.
-@Console @FileSystem @Process settingsFor(here: String): Option<Read> = when (nearest(path(here))) {
-  None -> None
-  Some(folder) -> {
-    read = readSettings(folder.value)
-    if (read.folder == path(here) || read.settings.projects.contains(path(here))) Some(read) else None
-  }
-}
-
-// The nearest folder with a settings.fk: folder, or one it's in.
-@FileSystem nearest(folder: Path): Option<Path> =
-  if (folder.resolve("settings.fk").exists()) Some(folder)
-  else when (folder.parent) {
-    Some(up) -> if (up == folder) None else nearest(up)
-    None -> None
-  }
-
-// What folder's settings.fk says: compiled with a main that prints it, with kiln's library alone, so
-// it can't use what it says build scripts use; and run.
-@Console @FileSystem @Process readSettings(folder: String): Read = {
-  lines = path(folder).resolve("settings.fk").readLines()
-  if (!lines.any { line -> line.startsWith("settings =") || line.startsWith("settings:") }) {
-    println("settings.fk: it must declare settings = Settings(...)")
-    exit(1)
-  }
-  program = "${lines.joinToString("\n")}\n\nmain(args: List<String>) = uk.m4xy.kiln.SettingsLines.of(settings).forEach { println(it) }\n"
-  cache = path(folder).resolve(".kiln/settings")
-  if (compileScript(program, "settings.fk", cache, [library()]) != 0) exit(1)
-  said = run(cache.resolve("build").value, [])
-  if (said.code != 0) {
-    print(said.value)
-    exit(1)
-  }
-  when (SettingsLines.read(said.value.lines(), path(folder))) {
-    Ok(settings) -> Read(path(folder), settings)
-    Error(problem) -> {
-      println("settings.fk: $problem")
-      exit(1)
-    }
-  }
-}
-
-// Compiles program, the script name with a main, to cache/build, with fckt, roots on its path, and
-// ocamlopt, unless it's as it was compiled last: running the OCaml as a script would type-check all
-// of it every time. Its exit code; what fckt says is wrong is the script's.
-@Console @FileSystem @Process compileScript(program: String, name: String, cache: Path, roots: List<Path>): Int = {
-  cache.makeDirs()
-  entry = cache.resolve("main.fk")
-  ml = cache.resolve("build.ml")
-  built = cache.resolve("build")
-  stamp = cache.resolve("stamp")
-  key = "kiln $version\n$program\n${roots.flatMap(sources).map { it.readText() }.joinToString("\n")}"
-  if (built.exists() && stamp.exists() && stamp.readText() == key) 0
-  else {
-    stamp.delete()
-    entry.writeText(program)
-    // kiln's library and the plugins' are other projects: the script sees what they publish, not what's internal to them.
-    exit = run(env("FCKT").getOrElse("fckt"), [entry.value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + buildImports.flatMap { ["--import", it] })
-    if (exit.code != 0) {
-      print(exit.value.replace(entry.value, name))
-      exit.code
-    } else {
-      native = run("ocamlopt", ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value])
-      if (native.code == 0) stamp.writeText(key) else print(native.value)
-      native.code
-    }
-  }
-}
-
-// Where uk.m4xy.kiln's source is: KILN_LIB; or lib/kiln beside the folder kiln is in, as it's
-// installed; or, built where it's developed, its src.
-@FileSystem @Process library(): Path = when (env("KILN_LIB")) {
-  Some(folder) -> path(folder)
-  None -> {
-    home = executable().parent.getOrElse(path(".")).resolve("..")
-    installed = home.resolve("lib/kiln")
-    if (installed.isDirectory()) installed else home.resolve("../src")
-  }
-}
-
-// What name = [...] names, from where it starts to the ] that ends it: a library's coordinates,
-// library("g:n:v"), or a project's folder, projectAt("../plugin"), as written; for a script written
-// as kiln's once were.
-listed(name: String, lines: List<String>): List<String> = {
-  from = lines.dropWhile { !it.startsWith("$name =") }
-  open = from.takeWhile { !it.contains("]") }
-  text = (open + from.drop(open.size).take(1)).joinToString("\n")
-  named = (call: String) -> text.split("$call(\"").drop(1).map { "$call:" + it.substringBefore("\"") }
-  named("library") + named("projectAt")
-}
-
-// Where what build scripts use has its packages: a library's source, from the first of
-// repositories that has it, with the libraries it uses; a project's src. kiln's library is always
-// there.
-@Console @FileSystem @Process pluginRoots(uses: List<Dependency>, repositories: List<Repository>): List<Path> = uses.flatMap { used ->
-  when (used) {
-    Folder(folder) -> [folder.resolve("src")]
-    Library(lib) -> librarySources(lib, emptySet(), repositories)
-    Kiln -> []
-  }
-}.distinct()
-
-@Console @FileSystem @Process librarySources(lib: Coordinates, seen: Set<Coordinates>, repositories: List<Repository>): List<Path> =
-  if (seen.contains(lib)) []
-  else when (folderOf(lib, repositories)) {
-    Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
-      when (used) {
-        Library(next) -> librarySources(next, seen + lib, repositories)
-        else -> []
-      }
-    }
-    None -> {
-      println("settings.fk: it uses ${CoordinatesText.of(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
-      exit(1)
-    }
-  }
-
-// text as a fckt string: in quotes, with what would end it or start a template escaped.
-quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$") + "\""
-
-// The .fk files in folder and those in it.
-@FileSystem sources(folder: Path): List<Path> =
-  if (!folder.isDirectory()) []
-  else folder.listFiles().flatMap { f -> if (f.isDirectory()) sources(f) else if (f.extension == "fk") [f] else [] }

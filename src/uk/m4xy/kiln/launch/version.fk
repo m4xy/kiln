@@ -1,0 +1,2 @@
+// kiln's version, which kiln --version says, and a built script is compiled for.
+internal version: String = "0.1.0"

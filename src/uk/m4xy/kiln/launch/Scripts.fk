@@ -1,0 +1,83 @@
+import fckt.io.Path
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Console
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Processes.*
+import fckt.text.Digests.*
+import uk.m4xy.kiln.Compiling.compiler
+import uk.m4xy.kiln.Compiling.sourcesIn
+
+// Scripts, build.fk and settings.fk: what they declare, and compiling them with a main kiln adds.
+internal module Scripts {
+  // What a build script imports without saying: what it needs to say what its project is, and to
+  // print and fail.
+  private imports: List<String> = [
+    "uk.m4xy.kiln.*", "uk.m4xy.kiln.Builds.*", "uk.m4xy.kiln.Dependencies.*",
+    "fckt.io.Path", "fckt.io.FileSystem", "fckt.io.Process", "fckt.io.Paths.*", "fckt.io.Files.*", "fckt.io.Processes.*",
+    "fckt.io.Console", "fckt.effects.Fail",
+  ]
+
+  // The names file, the script name, declares at its top level, as fckt reads them: remembered in
+  // cache for the text they were read from, as asking means starting a JVM.
+  @Console @FileSystem @Process declarations(file: Path, name: String, cache: Path): List<String> = {
+    key = file.readText().md5()
+    remembered = cache.resolve("declarations")
+    when (if (remembered.exists()) remembered.readLines() else []) {
+      [first, *names] if (first == key) -> names
+      else -> {
+        said = run(compiler(), ["--declarations", file.value])
+        if (said.code != 0) {
+          print(said.value.replace(file.value, name))
+          exit(1)
+        }
+        names = said.value.lines().filter { it.isNotBlank() }
+        cache.makeDirs()
+        remembered.writeText(([key] + names).joinToString("\n"))
+        names
+      }
+    }
+  }
+
+  // Compiles program, the script name with a main, to cache/build, with fckt, roots on its path, and
+  // ocamlopt, unless it's as it was compiled last: running the OCaml as a script would type-check all
+  // of it every time. Its exit code; what fckt says is wrong is the script's.
+  @Console @FileSystem @Process compile(program: String, name: String, cache: Path, roots: List<Path>): Int = {
+    cache.makeDirs()
+    entry = cache.resolve("main.fk")
+    ml = cache.resolve("build.ml")
+    built = cache.resolve("build")
+    stamp = cache.resolve("stamp")
+    key = "kiln $version\n$program\n${roots.flatMap { sourcesIn(it) }.map { it.readText() }.joinToString("\n")}"
+    if (built.exists() && stamp.exists() && stamp.readText() == key) 0
+    else {
+      stamp.delete()
+      entry.writeText(program)
+      // kiln's library and the plugins' are other projects: the script sees what they publish, not what's internal to them.
+      exit = run(compiler(), [entry.value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + imports.flatMap { ["--import", it] })
+      if (exit.code != 0) {
+        print(exit.value.replace(entry.value, name))
+        exit.code
+      } else {
+        native = run("ocamlopt", ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value])
+        if (native.code == 0) stamp.writeText(key) else print(native.value)
+        native.code
+      }
+    }
+  }
+
+  // Where uk.m4xy.kiln's source is: KILN_LIB; or lib/kiln beside the folder kiln is in, as it's
+  // installed; or, built where it's developed, its src.
+  @FileSystem @Process library(): Path = when (env("KILN_LIB")) {
+    Some(folder) -> path(folder)
+    None -> {
+      home = executable().parent.getOrElse(path(".")).resolve("..")
+      installed = home.resolve("lib/kiln")
+      if (installed.isDirectory()) installed else home.resolve("../src")
+    }
+  }
+
+  // text as a fckt string: in quotes, with what would end it or start a template escaped.
+  quoted(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$") + "\""
+}

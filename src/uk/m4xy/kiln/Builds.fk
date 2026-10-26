@@ -39,7 +39,7 @@ module Builds {
       tasks = tasksOf(project, tasks, plugins)
       // Only these, for another project that depends on this one.
       if (names == ["roots"]) {
-        ResolvedLines.of(resolve(project)).forEach { line -> println(line) }
+        println(ResolvedText.of(resolve(project)))
       }
       else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
       else {

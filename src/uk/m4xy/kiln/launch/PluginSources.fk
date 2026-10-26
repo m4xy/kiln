@@ -1,0 +1,40 @@
+import fckt.io.Path
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Console
+import fckt.io.Paths.*
+import fckt.io.Processes.*
+import fckt.collections.Sets.emptySet
+import fckt.collections.Sets.Set
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Dependencies.folderOf
+import uk.m4xy.kiln.Dependencies.folderIn
+import uk.m4xy.kiln.Dependencies.published
+
+// Where what build scripts use has its packages, which their scripts are compiled with.
+internal module PluginSources {
+  // A library's source, from the first of repositories that has it, with the libraries it uses; a
+  // project's src. kiln's library is always there.
+  @Console @FileSystem @Process of(uses: List<Dependency>, repositories: List<Repository>): List<Path> = uses.flatMap { used ->
+    when (used) {
+      Folder(folder) -> [folder.resolve("src")]
+      Library(lib) -> librarySources(lib, emptySet(), repositories)
+      Kiln -> []
+    }
+  }.distinct()
+
+  @Console @FileSystem @Process private librarySources(lib: Coordinates, seen: Set<Coordinates>, repositories: List<Repository>): List<Path> =
+    if (seen.contains(lib)) []
+    else when (folderOf(lib, repositories)) {
+      Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
+        when (used) {
+          Library(next) -> librarySources(next, seen + lib, repositories)
+          else -> []
+        }
+      }
+      None -> {
+        println("settings.fk: it uses ${CoordinatesText.of(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
+        exit(1)
+      }
+    }
+}

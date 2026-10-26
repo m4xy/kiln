@@ -1,0 +1,5 @@
+import fckt.io.Path
+import uk.m4xy.kiln.Settings
+
+// What settings.fk in folder says, with its folders made whole from there.
+internal type FoundSettings(folder: Path, settings: Settings)
