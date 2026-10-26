@@ -1,0 +1,8 @@
+import uk.m4xy.kiln.*
+
+// What a build script has unless it says otherwise, which kiln's main for it names: no tasks of its
+// own, no plugins, and, where no settings.fk applies, Settings()'s settings. The script's own, and
+// settings.fk's, are what those names mean where it has them.
+tasks: List<Task> = []
+plugins: List<Plugin> = []
+settings: Settings = Settings()

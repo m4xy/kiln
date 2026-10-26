@@ -35,7 +35,7 @@ FCKT says where fckt is, if the shell can't find it."""
     println(usage)
     0
   } else {
-    Launch.build(rest)
+    Launch.start(rest)
   }
   exit(code)
 }

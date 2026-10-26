@@ -101,9 +101,6 @@ tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
   build("Greetings()")
   assertEquals("> Task :greet\n  *waves*\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
   // What a script is compiled with isn't the script's to say.
-  write(shop, "build.fk", "uses = [projectAt(\"../greeting\")]\n\nproject = Project(name = \"shop\")\n")
-  expectContains(kiln(shop, ["tasks"]).value, "build.fk: the libraries and projects it's compiled with go in settings.fk")
-  // Nor is it a plugin.
   write(shop, "build.fk", "plugins = [projectAt(\"../greeting\")]\n\nproject = Project(name = \"shop\")\n")
   expectContains(kiln(shop, ["tasks"]).value, "expected List<uk.m4xy.kiln.Plugin> but found List<uk.m4xy.kiln.Dependency>")
   // What it declares is read as fckt reads it, not by how its lines start.
@@ -180,4 +177,17 @@ module Cleaning : Plugin {
   write(shop, "build.fk", "project = Project(name = \"nothing\")\n")
   assertEquals(2, kiln(shop.resolve("src"), ["build"]).code)
   expectContains(kiln(shop, ["nope"]).value, "BUILD FAILED: there's no task 'nope'")
+}
+
+// A script that doesn't declare what kiln's main for it names says so, as fckt does: there's nothing
+// kiln reads of it but what it declares.
+@Test @FileSystem @Process whatAScriptLeavesOutIsSaid() = {
+  shop = projects("leaving-out")
+  write(shop, "build.fk", "version = \"1.0\"\n")
+  expectContains(kiln(shop, ["tasks"]).value, "the main kiln adds to build.fk:1:57: error: unknown name 'project'")
+  write(shop, "build.fk", "project = Project(name = \"shop\")\nmain() = Unit\n")
+  expectContains(kiln(shop, ["tasks"]).value, "build.fk declares it, but it has a main of its own, so it's a program apart from this one")
+  write(shop, "build.fk", "project = Project(name = \"shop\")\n")
+  write(shop, "settings.fk", "repositories = [Local]\n")
+  expectContains(kiln(shop, ["tasks"]).value, "the main kiln adds to settings.fk:1:68: error: unknown name 'settings'")
 }

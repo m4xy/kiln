@@ -31,10 +31,11 @@ module Builds {
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
   // each, as Build's args, for run. The tasks are every project's, plugins', and tasks, the
-  // script's own.
-  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = []): Unit = {
+  // script's own; project's libraries are looked for where settings, as written, say.
+  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = [], settings: Settings = Settings()): Unit = {
     names = args.takeWhile { it != "--" }
-    build = Build(project, args.dropWhile { it != "--" }.drop(1))
+    build = Build(project.copy(repositories = settings.from(settingsFolder()).repositories), args.dropWhile { it != "--" }.drop(1))
+    project = build.project
     result = attempt {
       tasks = tasksOf(project, tasks, plugins)
       // Only these, for another project that depends on this one.
@@ -190,6 +191,9 @@ module Builds {
     scopes.resolve(name).writeText((["folder ${folder.value}\n"] +
       libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
   }
+
+  // Where settings.fk is, whose folders are written from there: KILN_SETTINGS, which kiln sets.
+  @Process private settingsFolder(): Path = path(env("KILN_SETTINGS").getOrElse("."))
 
   @Building private runProgram(build: Build): Unit = {
     project = build.project

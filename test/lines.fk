@@ -5,24 +5,14 @@ import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Folders.*
 
 // Each format reads back what it writes: all of it, with folders as they were written.
-@Test settingsAreReadBack() = assertReadsBack(
-  SettingsText,
-  Settings(
-    repositories = [At(path("team")), Local],
-    uses = [Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")), Folder(path("../plugin")), Kiln],
-    projects = [path("runner"), path("/elsewhere/kiln")],
-  ),
-)
-
 @Test whatAProjectIsBuiltFromIsReadBack() = {
   assertReadsBack(ResolvedText, Resolved([path("src"), path("/shared/src")], [Coordinates("uk.m4xy", "json", "1.2.0")], [At(path("../team")), Local], false))
   assertReadsBack(ResolvedText, Resolved([path("src")], [], [Local], true))
 }
 
-@Test coordinatesRepositoriesAndDependenciesAreReadBack() = {
+@Test coordinatesAndRepositoriesAreReadBack() = {
   assertReadsBack(CoordinatesText, Coordinates("uk.m4xy", "json", "1.2.0"))
   [Local, At(path("../team"))].forEach { assertReadsBack(RepositoryText, it) }
-  [Library(Coordinates("uk.m4xy", "json", "1.2.0")), Folder(path("plugin")), Kiln].forEach { assertReadsBack(DependencyText, it) }
 }
 
 // Folders as written are made whole from where they were written; whole ones stay as they are.
@@ -48,10 +38,8 @@ import uk.m4xy.kiln.Folders.*
 
 // What isn't in a format says so, rather than being passed over.
 @Test whatIsntInAFormatSaysSo() = {
-  assertEquals(Error("there's no setting 'colour blue'"), SettingsText.read("repository local\ncolour blue"))
-  assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), SettingsText.read("uses library json"))
+  assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), CoordinatesText.read("json"))
   assertEquals(Error("a repository is local or at a folder, not remote"), RepositoryText.read("remote"))
-  assertEquals(Error("what's used is a library, a project or kiln, not plugin"), DependencyText.read("plugin"))
   // Anything else kiln roots says isn't taken for a folder.
   assertEquals(Error("kiln roots said 'compiling json', which is neither a root, a library nor a repository"), ResolvedText.read("root src\ncompiling json"))
 }

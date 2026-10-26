@@ -6,18 +6,40 @@ import fckt.io.Paths.*
 import fckt.io.Files.*
 import fckt.io.Processes.*
 import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Folders.*
 
-// What kiln does when it's run: it reads settings.fk, in this folder, or the nearest above that lists
-// this one in its projects: where libraries are looked for, what build scripts use, and which
-// projects are built with this one. Then it adds a main to the build script, which hands project,
-// with its tasks and plugins, to uk.m4xy.kiln's runBuild, compiles that with fckt and ocamlopt to
-// .kiln/build, again only when it changes, and runs it.
-internal module Launch {
-  // Runs the tasks args names, in the projects the settings here list, then on the project here, and
-  // gives the exit code. roots is about this project only, for another that depends on it.
-  @Console @FileSystem @Process build(args: List<String>): Int = {
+// What kiln does when it's run. It looks for settings.fk, in this folder, or the nearest above, and
+// compiles it with a main that hands what it declares to withSettings: where libraries are looked
+// for, what build scripts use, and which projects are built with the one in its folder, if they
+// apply here. Then it compiles the build script, with settings.fk beside it, and a main that hands
+// project, tasks, plugins and settings to uk.m4xy.kiln's runBuild, with fckt and ocamlopt, to
+// .kiln/build, again only when they change, and runs it. Each is a value, as declared: none of it
+// passes as text.
+module Launch {
+  // kiln, run here with args: its exit code.
+  @Console @FileSystem @Process internal start(args: List<String>): Int = {
+    // For what this runs: kiln itself, as kiln runs other projects, and its library, which a plugin's tasks use.
+    setEnv("KILN", executable().value)
+    setEnv("KILN_LIB", Scripts.library().value)
     here = workingDirectory()
-    settings = SettingsFiles.settingsFor(here)
+    when (SettingsFiles.nearest(here)) {
+      Some(folder) -> SettingsFiles.run(folder, args)
+      None -> build(here, None, args)
+    }
+  }
+
+  // What settings.fk's main does with the settings it declares, written from KILN_SETTINGS, where
+  // it is: builds here with them, if they're its folder's, or list this one in their projects.
+  @Console @FileSystem @Process withSettings(settings: Settings, args: List<String>): Unit = {
+    folder = path(env("KILN_SETTINGS").getOrElse("."))
+    here = workingDirectory()
+    whole = settings.from(folder)
+    exit(build(here, if (folder == here || whole.projects.contains(here)) Some(FoundSettings(folder, whole)) else None, args))
+  }
+
+  // Runs the tasks args names, in the projects the settings list, then on the project here, and
+  // gives the exit code. roots is about this project only, for another that depends on it.
+  @Console @FileSystem @Process private build(here: Path, settings: Option<FoundSettings>, args: List<String>): Int = {
     names = args.takeWhile { it != "--" }
     included = when (settings) {
       Some(found) -> if (found.folder == here && !names.contains("roots")) found.settings.projects else []
@@ -25,7 +47,7 @@ internal module Launch {
     }
     failed = included.find { folder ->
       println("> Project ${folder.value.removePrefix(here.value + "/")}")
-      runAttached(executable().value, ["-C", folder.value] + args) != 0
+      runAttached(env("KILN").getOrElse("kiln"), ["-C", folder.value] + args) != 0
     }
     if (failed.isSome()) 1
     else if (path("build.fk").exists()) script(settings, args)
@@ -36,34 +58,13 @@ internal module Launch {
     }
   }
 
-  // The build script here, compiled with what the settings say it uses, run with args.
+  // The build script here, compiled with settings.fk beside it, if it applies, and what it says
+  // build scripts use; run with args.
   @Console @FileSystem @Process private script(settings: Option<FoundSettings>, args: List<String>): Int = {
-    declared = Scripts.declarations(path("build.fk"), "build.fk", path(".kiln"))
-    if (declared.contains("main")) {
-      println("build.fk: it declares project, and kiln runs it, so it can't have a main")
-      1
-    } else if (!declared.contains("project")) {
-      println("build.fk: it must declare project = Project(name = \"...\")")
-      1
-    } else if (declared.contains("uses")) {
-      println("build.fk: the libraries and projects it's compiled with go in settings.fk, settings = Settings(uses = [...]); plugins = [...] applies their plugins, as modules")
-      1
-    } else {
-      found = settings.getOrElse(FoundSettings(path("."), Settings()))
-      given = ["tasks", "plugins"].filter { declared.contains(it) }.map { ", $it = $it" }.joinToString("")
-      repositories = found.settings.repositories.map { r ->
-        when (r) {
-          Local -> "Local"
-          At(folder) -> "At(path(${Scripts.quoted(folder.value)}))"
-        }
-      }.joinToString(", ")
-      // The script, then its main, so the script's lines keep their numbers: its folders aren't
-      // packages, as src would be if the project's folder were one of fckt's.
-      program = "${path("build.fk").readText()}\n\nmain(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project.copy(repositories = [$repositories]), args$given)\n"
-      code = Scripts.compile(program, "build.fk", path(".kiln"), [Scripts.library()] + PluginSources.of(found.settings.uses, found.settings.repositories))
-      // A plugin's tasks use kiln's library, as kiln() says, from where this kiln has it.
-      setEnv("KILN_LIB", Scripts.library().value)
-      if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
-    }
+    main = "main(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args, tasks, plugins, settings)\n"
+    scripts = [path("build.fk")] + settings.map { [it.folder.resolve("settings.fk")] }.getOrElse([])
+    uses = settings.map { PluginSources.of(it.settings.uses, it.settings.repositories) }.getOrElse([])
+    code = Scripts.compile(main, scripts, path(".kiln"), [Scripts.library()] + uses, Scripts.imports + ["uk.m4xy.kiln.defaults.*"])
+    if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
   }
 }
