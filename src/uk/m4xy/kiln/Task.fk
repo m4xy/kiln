@@ -1,4 +1,4 @@
-// Something a build does, as compiling, by name: kiln compile runs the task compile, after those it
+// Something a build does, as compiling: kiln compile runs the task named compile, after those it
 // depends on, each once. A task part of another runs before it, as if that depended on it: a
-// plugin's task part of check, as a test is, runs when check does, and so when build does.
-type Task(name: String, description: String, dependsOn: List<String> = [], partOf: List<String> = [], action: @Building (Build) -> Unit)
+// plugin's task part of Check, as a test is, runs when check does, and so when build does.
+type Task(name: TaskName, description: String, dependsOn: List<TaskName> = [], partOf: List<TaskName> = [], action: @Building (Invocation) -> Unit)

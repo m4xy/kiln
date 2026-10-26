@@ -16,10 +16,10 @@ import uk.m4xy.kiln.Publishing.*
 module Programs {
   // The plugin's tasks, for a project laid out as layout says.
   tasks(layout: FcktLayout): List<Task> = [
-    Task("compile", "Compiles the program to output/bin, or a library, which has no main, to output/library", partOf = ["check"], action = build -> compile(build.project, layout)),
-    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = build -> runProgram(build)),
-    Task("publishLocal", "Checks it, then publishes it as a library to ~/.kiln/repository", dependsOn = ["check"], action = build -> publishLocal(build.project, layout)),
-    Task("roots", "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories", action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout)))),
+    Task(FcktTasks.compile, "Compiles the program to output/bin, or a library, which has no main, to output/library", partOf = [Check], action = build -> compile(build.project, layout)),
+    Task(FcktTasks.run, "Runs the program, with what follows --", dependsOn = [FcktTasks.compile], action = build -> runProgram(build)),
+    Task(FcktTasks.publishLocal, "Checks it, then publishes it as a library to ~/.kiln/repository", dependsOn = [Check], action = build -> publishLocal(build.project, layout)),
+    Task(FcktTasks.roots, "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories", action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout)))),
   ]
 
   // A library has no main: its packages are compiled as a library is, which checks all of them and
@@ -80,7 +80,7 @@ module Programs {
       libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
   }
 
-  @Building private runProgram(build: Build): Unit = {
+  @Building private runProgram(build: Invocation): Unit = {
     project = build.project
     program = project.output.resolve("bin").resolve(project.name)
     exit = streaming(program.value, build.args) { forEachLine { println(it) } }

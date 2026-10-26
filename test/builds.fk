@@ -14,8 +14,10 @@ prices = "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n"
   write(shop, "src/main.fk", "import fckt.io.Console\nimport pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
   write(shop, "build.fk", fckt + """project = Project(name = "shop", version = "1.2.0")
 
+stamp = Named("stamp")
+
 tasks = [
-  Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
+  Task(stamp, "Writes the version", dependsOn = [FcktTasks.compile], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
 ]
 """)
   expectContains(kiln(shop, ["tasks"]).value, "  stamp - Writes the version")
@@ -35,7 +37,7 @@ tasks = [
   write(lint, "build.fk", fckt + """project = Project(name = "lint")
 
 tasks = [
-  Task("lint", "Looks at the code", partOf = ["check"], action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine")),
+  Task(Named("lint"), "Looks at the code", partOf = [Check], action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine")),
 ]
 """)
   assertEquals("> Task :compile\n  checked 1 package: pricing\n> Task :lint\n  looks fine\n> Task :check\n> Task :build\nBUILD SUCCESSFUL\n", kiln(lint, ["build"]).value)
@@ -95,7 +97,7 @@ project = Project(name = "shop")
 
 plugins = [Fckt(), $plugins]
 
-tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
+tasks = [Task(Named("greet"), "Waves", action = build -> println("  *waves*"))]
 """)
   build("Greetings(), Cleaning")
   // A plugin can't replace what every project has.
@@ -120,14 +122,14 @@ import uk.m4xy.kiln.*
 
 module Greetings(W: Words = Hello) : Plugin {
   name(): String = "greetings"
-  tasks(project: Project): List<Task> = [Task("greet", "Greets the project", action = build -> println("  " + W.greeting() + ", " + build.project.name))]
+  tasks(project: Project): List<Task> = [Task(Named("greet"), "Greets the project", action = build -> println("  " + W.greeting() + ", " + build.project.name))]
 }
 """)
   write(dir, "greeting/src/uk/m4xy/greeting/Cleaning.fk", """import uk.m4xy.kiln.*
 
 module Cleaning : Plugin {
   name(): String = "cleaning"
-  tasks(project: Project): List<Task> = [Task("clean", "Cleans differently", action = build -> Unit)]
+  tasks(project: Project): List<Task> = [Task(Clean, "Cleans differently", action = build -> Unit)]
 }
 """)
 }
@@ -137,8 +139,8 @@ module Cleaning : Plugin {
 @Test @FileSystem @Process projectsAreBuiltTogether() = {
   dir = projects("together")
   write(dir, "settings.fk", "settings = Settings(projects = [path(\"pricing\"), path(\"shop\")])\n")
-  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(\"hello\", \"Says hello\", action = build -> println(\"  pricing\"))]\n")
-  write(dir, "shop/build.fk", "project = Project(name = \"shop\")\n\ntasks = [Task(\"hello\", \"Says hello\", action = build -> println(\"  shop\"))]\n")
+  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(Named(\"hello\"), \"Says hello\", action = build -> println(\"  pricing\"))]\n")
+  write(dir, "shop/build.fk", "project = Project(name = \"shop\")\n\ntasks = [Task(Named(\"hello\"), \"Says hello\", action = build -> println(\"  shop\"))]\n")
   assertEquals(
     "> Project pricing\n> Task :hello\n  pricing\nBUILD SUCCESSFUL\n> Project shop\n> Task :hello\n  shop\nBUILD SUCCESSFUL\n",
     kiln(dir, ["hello"]).value,
@@ -146,7 +148,7 @@ module Cleaning : Plugin {
   // In one of them, just it.
   assertEquals("> Task :hello\n  shop\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["hello"]).value)
   // One that fails stops the rest.
-  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(\"hello\", \"Fails\", action = build -> fail(\"no\"))]\n")
+  write(dir, "pricing/build.fk", "project = Project(name = \"pricing\")\n\ntasks = [Task(Named(\"hello\"), \"Fails\", action = build -> fail(\"no\"))]\n")
   result = kiln(dir, ["hello"])
   assertEquals(1, result.code)
   assertEquals(false, result.value.contains("> Project shop"))
@@ -179,6 +181,9 @@ module Cleaning : Plugin {
   write(shop, "build.fk", "project = Project(name = \"nothing\")\n")
   assertEquals(2, kiln(shop.resolve("src"), ["build"]).code)
   expectContains(kiln(shop, ["nope"]).value, "BUILD FAILED: there's no task 'nope'")
+  // A task named by its value, but which nothing applied makes.
+  write(shop, "build.fk", "import uk.m4xy.kiln.fckt.FcktTasks\n\nproject = Project(name = \"nothing\")\n\ntasks = [Task(Named(\"stamp\"), \"Stamps\", dependsOn = [FcktTasks.compile], action = build -> Unit)]\n")
+  expectContains(kiln(shop, ["stamp"]).value, "BUILD FAILED: there's no task 'compile', which a task depends on or is part of: is the plugin that makes it applied?")
 }
 
 // A script that doesn't declare what kiln's main for it names says so, as fckt does: there's nothing
@@ -202,7 +207,7 @@ module Cleaning : Plugin {
   write(site, "build.fk", """project = Project(name = "site")
 
 tasks = [
-  Task("pages", "Makes the pages", partOf = ["build"], action = build -> {
+  Task(Named("pages"), "Makes the pages", partOf = [Build], action = build -> {
     made = run("sh", ["-c", "mkdir -p build && tr a-z A-Z < pages/index.txt > build/index.txt"])
     if (made.code != 0) fail(made.value)
   }),

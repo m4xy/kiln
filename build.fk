@@ -3,24 +3,27 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 import uk.m4xy.kiln.fckt.Fckt
+import uk.m4xy.kiln.fckt.FcktTasks
 import uk.m4xy.fktests.kiln.*
 
 project = Project(name = "kiln", group = "uk.m4xy", version = "0.1.0")
 
 // The tests run the kiln compile makes, so they need it made first, and run again when it changes.
 module KilnTests : TestConfiguration {
-  dependsOn(): List<String> = ["compile"]
+  dependsOn(): List<TaskName> = [FcktTasks.compile]
   inputs(): List<Path> = [path("build/bin/kiln")]
 }
 
 plugins = [Fckt(), FkTests(KilnTests)]
 
+install = Named("install")
+
 tasks = [
-  Task("install", "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = ["compile"], action = install),
+  Task(install, "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = [FcktTasks.compile], action = installKiln),
 ]
 
 // The program to bin, and uk.m4xy.kiln's source to lib/kiln, where the program looks for it.
-@Building install(build: Build): Unit = {
+@Building installKiln(build: Invocation): Unit = {
   home = path(env("KILN_HOME").getOrElse(env("HOME").getOrElse(".") + "/.kiln"))
   home.resolve("bin").makeDirs()
   build.project.output.resolve("bin/kiln").copyTo(home.resolve("bin/kiln"))

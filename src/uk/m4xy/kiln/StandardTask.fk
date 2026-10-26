@@ -1,0 +1,3 @@
+// The tasks every project has, whatever it's in: what makes and checks it, its plugins give, as
+// tasks part of Build and Check.
+type StandardTask { Clean, Check, Build }

@@ -1,0 +1,7 @@
+module TaskNames {
+  // As the command line has it: kiln check, kiln compile.
+  TaskName.text: String = when (this) {
+    is StandardTask -> this.name.lowercase()
+    is Named -> this.name
+  }
+}

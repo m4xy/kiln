@@ -13,7 +13,7 @@ import fckt.io.Processes.*
 @Process here(): String = run("pwd", []).value.trim()
 
 // What a build script for a project in fckt starts with: fckt's plugin, applied.
-fckt = "import uk.m4xy.kiln.fckt.Fckt\n\nplugins = [Fckt()]\n\n"
+fckt = "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.kiln.fckt.FcktTasks\n\nplugins = [Fckt()]\n\n"
 
 // A fresh folder for a test's projects.
 @FileSystem projects(name: String): Path = {

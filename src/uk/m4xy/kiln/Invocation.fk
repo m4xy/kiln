@@ -1,0 +1,3 @@
+// What a task's action is given, when kiln runs it: the project, and what follows -- on the
+// command line, for a task that takes it, as run does.
+type Invocation(project: Project, args: List<String>)

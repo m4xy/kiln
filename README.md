@@ -86,20 +86,28 @@ project = Project(
 ```
 
 A task is a `Task(name, description, dependsOn, partOf, action)`, whose action is fckt that may
-print, use files and run programs (`@Building`), given the `Build`: the project, and what follows
+print, use files and run programs (`@Building`), given the `Invocation`: the project, and what follows
 `--`. A task `partOf` another runs before it, as if that depended on it. A build script adds its
-own by declaring `tasks`, which replace any of the same name, every project's or a plugin's:
+own by declaring `tasks`, which replace any of the same name, every project's or a plugin's.
+
+A task is named by a `TaskName`, never by a string: one of the `StandardTask`s every project has,
+`Clean`, `Check` and `Build`, or `Named(...)`, whose name is written once, by what makes the task,
+as a value the rest use, so that a name mistyped doesn't compile. Fckt's are `FcktTasks`';
+the command line's `kiln compile` is the only place a task's name is text:
 
 ```kotlin
 import uk.m4xy.kiln.fckt.Fckt
+import uk.m4xy.kiln.fckt.FcktTasks
 
 project = Project(name = "shop", version = "1.2.0")
 
 plugins = [Fckt()]
 
+stamp = Named("stamp")
+
 tasks = [
-  Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
-  Task("lint", "Looks at the code", partOf = ["check"], action = build -> println("  looks fine")),
+  Task(stamp, "Writes the version", dependsOn = [FcktTasks.compile], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
+  Task(Named("lint"), "Looks at the code", partOf = [Check], action = build -> println("  looks fine")),
 ]
 ```
 
@@ -176,7 +184,7 @@ module Hello : Words {
 
 module Greetings(W: Words = Hello) : Plugin {
   name(): String = "greetings"
-  tasks(project: Project): List<Task> = [Task("greet", "Greets the project", action = build -> println(W.greeting()))]
+  tasks(project: Project): List<Task> = [Task(Named("greet"), "Greets the project", action = build -> println(W.greeting()))]
 }
 ```
 

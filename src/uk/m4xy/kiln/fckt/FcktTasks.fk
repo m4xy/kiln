@@ -1,0 +1,10 @@
+import uk.m4xy.kiln.*
+
+// The Fckt plugin's tasks, as others name them: a script's task that needs the program first
+// depends on FcktTasks.compile.
+module FcktTasks {
+  compile: TaskName = Named("compile")
+  run: TaskName = Named("run")
+  publishLocal: TaskName = Named("publishLocal")
+  roots: TaskName = Named("roots")
+}

@@ -1,0 +1,3 @@
+// What a task is called, and so how others name it: one every project has, or another, as a
+// plugin's or a script's, which says its name once, as a value others use: compile = Named("compile").
+type TaskName { *StandardTask, Named(name: String) }

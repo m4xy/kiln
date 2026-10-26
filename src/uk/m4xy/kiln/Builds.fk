@@ -9,34 +9,36 @@ import fckt.io.Console
 import fckt.effects.Fail
 import fckt.collections.Sets.*
 import fckt.collections.Maps.*
+import uk.m4xy.kiln.TaskNames.*
 
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
 // calls runBuild(project, args) with what follows it on the command line, and the script's tasks,
 // plugins and settings.
 module Builds {
-  // The tasks every project has, whatever it's in: what makes it, and what checks it, its plugins
-  // give, as tasks part of build and check.
-  internal standardTasks: List<Task> = [
-    Task("clean", "Deletes what's been built", action = build -> build.project.output.delete()),
-    Task("check", "Checks the project: runs the tasks part of it", action = build -> Unit),
-    Task("build", "Checks the project, and runs the tasks part of it", dependsOn = ["check"], action = build -> Unit),
-  ]
+  // The tasks every project has: one of each StandardTask.
+  internal standardTasks: List<Task> = StandardTask.values.map { standard(it) }
+
+  private standard(task: StandardTask): Task = when (task) {
+    Clean -> Task(Clean, "Deletes what's been built", action = build -> build.project.output.delete())
+    Check -> Task(Check, "Checks the project: runs the tasks part of it", action = build -> Unit)
+    Build -> Task(Build, "Checks the project, and runs the tasks part of it", dependsOn = [Check], action = build -> Unit)
+  }
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
-  // each, as Build's args, for run. The tasks are every project's, plugins', and tasks, the
+  // each, as Invocation's args, for run. The tasks are every project's, plugins', and tasks, the
   // script's own; project's libraries are looked for where settings, as written, say. With
   // --quiet, only what the tasks print is printed, for another program to read.
   @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = [], settings: Settings = Settings()): Unit = {
     given = args.takeWhile { it != "--" }
     quiet = given.contains("--quiet")
     names = given.filter { it != "--quiet" }
-    build = Build(project.copy(repositories = settings.from(settingsFolder()).repositories), args.dropWhile { it != "--" }.drop(1))
+    build = Invocation(project.copy(repositories = settings.from(settingsFolder()).repositories), args.dropWhile { it != "--" }.drop(1))
     result = attempt {
       tasks = tasksOf(build.project, tasks, plugins)
       if (names.isEmpty() || names.contains("tasks")) listTasks(build.project, tasks)
       else {
-        order(names, tasks, []).forEach { task ->
-          if (!quiet) println("> Task :${task.name}")
+        order(names.map { named(it, tasks) }, tasks, []).forEach { task ->
+          if (!quiet) println("> Task :${task.name.text}")
           action = task.action
           action(build)
         }
@@ -56,26 +58,33 @@ module Builds {
     mine = own.map { it.name }.toSet()
     // Each plugin's tasks, with the plugin.
     made = plugins.flatMap { p -> p.tasks(project).map { (p.name(), it) } }.filter { _, t -> !mine.contains(t.name) }
-    made.groupBy { _, t -> t.name }.forEach { name, makers ->
+    made.groupBy { _, t -> t.name.text }.forEach { name, makers ->
       by = makers.map { plugin, _ -> plugin }.joinToString(" and ")
       if (makers.size > 1) fail("plugins $by both make a task $name: make it in tasks, to say which it is")
-      if (standardTasks.any { it.name == name }) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
+      if (standardTasks.any { it.name.text == name }) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
     }
     standardTasks.filter { !mine.contains(it.name) } + made.map { _, t -> t } + own
   }
 
   @Console private listTasks(project: Project, tasks: List<Task>): Unit = {
     println("Tasks of ${project.name} ${project.version}:")
-    tasks.forEach { println("  ${it.name} - ${it.description}") }
+    tasks.forEach { println("  ${it.name.text} - ${it.description}") }
+  }
+
+  // The task the command line names.
+  @Fail private named(text: String, tasks: List<Task>): TaskName = when (tasks.find { it.name.text == text }) {
+    Some(found) -> found.name
+    None -> fail("there's no task '$text'; kiln tasks lists them")
   }
 
   // The tasks to run for names, in order: each after what it depends on, once.
-  @Fail private order(names: List<String>, tasks: List<Task>, done: List<Task>): List<Task> = when (names) {
+  @Fail private order(names: List<TaskName>, tasks: List<Task>, done: List<Task>): List<Task> = when (names) {
     [] -> done
     [name, *rest] -> {
       task = when (tasks.find { it.name == name }) {
         Some(found) -> found
-        None -> fail("there's no task '$name'; kiln tasks lists them")
+        // Named in a script or plugin, but made by none this build has.
+        None -> fail("there's no task '${name.text}', which a task depends on or is part of: is the plugin that makes it applied?")
       }
       // What it depends on, and the tasks part of it.
       needs = task.dependsOn + tasks.filter { it.partOf.contains(task.name) }.map { it.name }
