@@ -1,0 +1,37 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.effects.Fail
+import fckt.io.Console
+import uk.m4xy.kiln.Dependencies.*
+
+// Publishing a project as a library, to the local repository: group/name/version, with what its
+// plugin writes there and a dependencies file, a library's coordinates a line, which is all kiln
+// reads of it.
+module Publishing {
+  // Publishes project, with write writing what it's published as to the folder it's given, once
+  // it's sure to work: what was published as this version before goes then.
+  @Building publish(project: Project, write: @Building (Path) -> Unit): Unit = {
+    if (project.group.isEmpty()) fail("a library needs a group: Project(group = \"uk.m4xy\", ...)")
+    project.dependencies.forEach { d ->
+      when (d) {
+        Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
+        Library(_) -> Unit
+        Kiln -> Unit
+      }
+    }
+    coordinates = Coordinates(project.group, project.name, project.version)
+    target = publishedAt(coordinates)
+    target.delete()
+    target.makeDirs()
+    write(target)
+    target.resolve("dependencies").writeText(project.dependencies.flatMap { d ->
+      when (d) {
+        Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
+        Folder(_) -> []
+        Kiln -> []
+      }
+    }.joinToString(""))
+    println("  published ${CoordinatesText.of(coordinates)} to ${target.value}")
+  }
+}

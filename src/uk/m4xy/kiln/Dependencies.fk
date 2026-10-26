@@ -49,21 +49,8 @@ module Dependencies {
 
   private within(lib: Coordinates): String = "${lib.group}/${lib.name}/${lib.version}"
 
-  // What the project's programs are built from: the folders its packages are in, then its folder
-  // projects', each once; and the libraries it uses, with theirs and its folder projects'. Where two
-  // ask for a library in different versions, the higher is used.
-  @FileSystem @Process resolve(project: Project): Resolved = {
-    found = folders(project.dependencies).map { folderResolved(it) }
-    Resolved(
-      (project.sources + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
-      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
-      project.repositories,
-      project.standardLibrary,
-    )
-  }
-
   // The libraries asked for, with theirs, as the repositories say.
-  @FileSystem @Process private libraries(wanted: List<Dependency>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (wanted) {
+  @FileSystem @Process libraries(wanted: List<Dependency>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (wanted) {
     [] -> found
     [Library(lib), *rest] ->
       if (found.contains(lib)) libraries(rest, found, repositories)
@@ -87,7 +74,7 @@ module Dependencies {
   }
 
   // Of each library, the highest version asked for.
-  private chosen(libs: List<Coordinates>): List<Coordinates> =
+  chosen(libs: List<Coordinates>): List<Coordinates> =
     libs.filter { lib -> !libs.any { other -> other.group == lib.group && other.name == lib.name && newer(other.version, lib.version) } }
       .distinct()
 
@@ -99,25 +86,5 @@ module Dependencies {
     ([], _) -> compareVersions([0], b)
     (_, []) -> compareVersions(a, [0])
     ([x, *xs], [y, *ys]) -> if (x != y) x - y else compareVersions(xs, ys)
-  }
-
-  private folders(dependencies: List<Dependency>): List<Path> = dependencies.flatMap { d ->
-    when (d) {
-      Folder(path) -> [path]
-      Library(_) -> []
-      Kiln -> []
-    }
-  }
-
-  // A project's folders and libraries, as its own build says: kiln -C folder roots, which prints
-  // them as ResolvedText writes them.
-  @FileSystem @Process private folderResolved(folder: Path): Resolved = {
-    if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
-    exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "roots"])
-    if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
-    when (ResolvedText.read(exit.value)) {
-      Ok(resolved) -> resolved.from(folder)
-      Error(problem) -> fail("couldn't read the project in ${folder.value}: $problem")
-    }
   }
 }

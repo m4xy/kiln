@@ -1,25 +1,18 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 
-// What a project is: its name and version, where its code is, and what it uses. A build.fk at the
-// project's root makes one, project = Project(name = "shop"), and kiln build, test or run builds it.
+// What a project is: its name and version, and what it uses. A build.fk at the project's root makes
+// one, project = Project(name = "shop"), and its plugins say what it's built from and how: what
+// language it's in is theirs to know, as plugins = [Fckt()] knows fckt.
 type Project(
   name: String,
   version: String = "0.1.0",
-  // Who publishes it, as a reversed domain: uk.m4xy. A library's packages go in a folder of that
-  // name, src/uk/m4xy, so two libraries' never meet.
+  // Who publishes it, as a reversed domain: uk.m4xy.
   group: String = "",
   // The libraries and projects it uses: library("uk.m4xy:json:1.2.0"), projectAt("../pricing").
   dependencies: List<Dependency> = [],
-  // The program's file, with its main.
-  main: Path = path("src/main.fk"),
-  // The folders its packages are in.
-  sources: List<Path> = [path("src")],
-  // Where what's built goes: the program is output/bin/name.
+  // Where what's built goes.
   output: Path = path("build"),
   // Where its libraries are looked for, in order; kiln sets it from settings.fk.
   repositories: List<Repository> = [Local],
-  // Whether it has the standard library, fckt:std, the one beside the fckt it's built with, as
-  // every project does unless it says otherwise: the standard library's own doesn't.
-  standardLibrary: Boolean = true,
 )

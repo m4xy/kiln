@@ -38,11 +38,11 @@ module Launch {
   }
 
   // Runs the tasks args names, in the projects the settings list, then on the project here, and
-  // gives the exit code. roots is about this project only, for another that depends on it.
+  // gives the exit code. Run --quiet, for another program to read, it's about this project only.
   @Console @FileSystem @Process private build(here: Path, settings: Option<FoundSettings>, args: List<String>): Int = {
     names = args.takeWhile { it != "--" }
     included = when (settings) {
-      Some(found) -> if (found.folder == here && !names.contains("roots")) found.settings.projects else []
+      Some(found) -> if (found.folder == here && !names.contains("--quiet")) found.settings.projects else []
       None -> []
     }
     failed = included.find { folder ->

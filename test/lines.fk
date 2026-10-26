@@ -3,6 +3,8 @@ import uk.m4xy.fktests.api.Test
 import uk.m4xy.fktests.api.Formats.*
 import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Folders.*
+import uk.m4xy.kiln.fckt.*
+import uk.m4xy.kiln.fckt.Resolving.*
 
 // Each format reads back what it writes: all of it, with folders as they were written.
 @Test whatAProjectIsBuiltFromIsReadBack() = {

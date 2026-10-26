@@ -1,0 +1,15 @@
+import uk.m4xy.kiln.*
+
+// fckt, as a kiln plugin: what builds a project whose code is fckt, compiled to OCaml, with fckt
+// and ocamlopt. Its tasks: compile, part of check, as compiling checks it; run; publishLocal, which
+// publishes its packages as a library; and roots, which says what it's built from, for another
+// project that depends on it. A build script applies it, as it is, or configured:
+//
+//   import uk.m4xy.kiln.fckt.Fckt
+//
+//   plugins = [Fckt()]
+module Fckt(Configuration: FcktConfiguration = StandardFckt) : Plugin {
+  name(): String = "fckt"
+
+  tasks(project: Project): List<Task> = Programs.tasks(Configuration.layout())
+}

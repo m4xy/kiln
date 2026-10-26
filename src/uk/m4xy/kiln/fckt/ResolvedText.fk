@@ -1,5 +1,7 @@
 import fckt.io.Paths.*
 import fckt.text.Format
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Dependencies.*
 
 // What a project is built from as it passes to another that depends on it, which runs kiln roots in
 // its folder and reads what it prints: a line for each folder its packages are in, each library it

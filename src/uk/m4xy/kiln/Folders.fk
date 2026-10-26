@@ -1,8 +1,9 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 
-// What's read from text has its folders as written, which may be relative to where it was written:
-// each made whole from folder, that place, as ../team from /work/shop is /work/team.
+// What's written in settings.fk, or read from what another project says, has its folders as
+// written, which may be relative to where that is: each made whole from folder, that place, as
+// ../team from /work/shop is /work/team.
 module Folders {
   Repository.from(folder: Path): Repository = when (this) {
     Local -> Local
@@ -18,10 +19,5 @@ module Folders {
     repositories = this.repositories.map { it.from(folder) },
     uses = this.uses.map { it.from(folder) },
     projects = this.projects.map { folder.resolve(it.value) },
-  )
-
-  Resolved.from(folder: Path): Resolved = this.copy(
-    roots = this.roots.map { folder.resolve(it.value) },
-    repositories = this.repositories.map { it.from(folder) },
   )
 }

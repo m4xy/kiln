@@ -7,15 +7,16 @@ import fckt.io.Processes.*
 import uk.m4xy.kiln.launch.Launch
 import uk.m4xy.kiln.launch.version
 
-// kiln: builds the fckt project whose build.fk is in this folder, or with -C, in another, as Launch
+// kiln: builds the project whose build.fk is in this folder, or with -C, in another, as Launch
 // does.
 
-usage = """usage: kiln [-C <dir>] <task>... [-- <args>]
+usage = """usage: kiln [-C <dir>] [--quiet] <task>... [-- <args>]
 
-Builds the fckt project whose build.fk is in this folder, or with -C, in dir: kiln build, test,
-run, clean, compile, publishLocal, roots, or tasks to list them. build.fk declares project =
+Builds the project whose build.fk is in this folder, or with -C, in dir: kiln clean, check, build,
+the tasks its plugins make, or tasks to list them. build.fk, which is fckt, declares project =
 Project(name = "..."), and may declare tasks = [Task(...)], its own, and plugins = [...], those it
-applies. settings.fk, beside it or above, declares settings = Settings(...): the repositories
+applies: plugins = [Fckt()] builds fckt, with compile, run, publishLocal and roots. With --quiet,
+only what the tasks print is printed, for this project alone. settings.fk, beside it or above, declares settings = Settings(...): the repositories
 libraries are looked for in, in order; what build scripts use, for their plugins; and the projects
 built with the one in its folder. What follows -- goes to the tasks, as to the program for run.
 FCKT says where fckt is, if the shell can't find it."""

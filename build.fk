@@ -2,6 +2,7 @@
 // fk-tests', which fk-tests-kiln runs; bootstrap.sh publishes them first.
 import fckt.io.Path
 import fckt.io.Paths.*
+import uk.m4xy.kiln.fckt.Fckt
 import uk.m4xy.fktests.kiln.*
 
 project = Project(name = "kiln", group = "uk.m4xy", version = "0.1.0")
@@ -12,7 +13,7 @@ module KilnTests : TestConfiguration {
   inputs(): List<Path> = [path("build/bin/kiln")]
 }
 
-plugins = [FkTests(KilnTests)]
+plugins = [Fckt(), FkTests(KilnTests)]
 
 tasks = [
   Task("install", "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = ["compile"], action = install),

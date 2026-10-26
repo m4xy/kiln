@@ -1,0 +1,89 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Processes.*
+import fckt.io.Channels.*
+import fckt.io.Process
+import fckt.io.FileSystem
+import fckt.io.Console
+import fckt.effects.Fail
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Dependencies.*
+import uk.m4xy.kiln.Publishing.*
+
+// A fckt project's programs and library: what the Fckt plugin's tasks do, for a project laid out as
+// its layout says.
+module Programs {
+  // The plugin's tasks, for a project laid out as layout says.
+  tasks(layout: FcktLayout): List<Task> = [
+    Task("compile", "Compiles the program to output/bin, or a library, which has no main, to output/library", partOf = ["check"], action = build -> compile(build.project, layout)),
+    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = build -> runProgram(build)),
+    Task("publishLocal", "Checks it, then publishes it as a library to ~/.kiln/repository", dependsOn = ["check"], action = build -> publishLocal(build.project, layout)),
+    Task("roots", "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories", action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout)))),
+  ]
+
+  // A library has no main: its packages are compiled as a library is, which checks all of them and
+  // that what it shows says its types; to output/library, its interface and its OCaml.
+  @Building private compile(project: Project, layout: FcktLayout): Unit = {
+    resolved = Resolving.resolve(project, layout)
+    linking = Compiling.linking(resolved)
+    remember(resolved, linking)
+    inputs = Compiling.inputs(linking, resolved.roots, if (layout.main.exists()) [layout.main] else [])
+    if (layout.main.exists()) {
+      program = project.output.resolve("bin").resolve(project.name)
+      if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, layout.sources, resolved.roots, layout.main, ml, program) }) println("  up to date")
+    } else {
+      packages = layout.sources.flatMap { Compiling.packagesIn(it, it) }.distinct()
+      if (packages.isEmpty()) fail("there's no ${layout.main.value}, and no packages in ${layout.sources.map { it.value }.joinToString(", ")}")
+      library = project.output.resolve("library")
+      stamp = library.resolve("inputs")
+      if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
+      else {
+        library.delete()
+        library.makeDirs()
+        unit = Compiling.unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
+        Compiling.compilePackages(linking, layout.sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
+        stamp.writeText(inputs)
+        println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
+      }
+    }
+  }
+
+  // Its packages, which must all be under its group's folder, so they never meet another
+  // library's, in src, as the library's source.
+  @Building private publishLocal(project: Project, layout: FcktLayout): Unit = {
+    groupPath = project.group.replace(".", "/")
+    layout.sources.flatMap { Compiling.packagesIn(it, it) }.forEach { p ->
+      if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
+    }
+    layout.sources.forEach { root ->
+      if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
+    }
+    publish(project) { target -> layout.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) } }
+  }
+
+  // For editors, in .kiln/paths: the folders the project's packages are in, a line each, and the
+  // interfaces of the libraries it uses, as compiled, so they can check its files as kiln does.
+  @FileSystem private remember(resolved: Resolved, linking: Linking): Unit = {
+    folder = path(".kiln")
+    folder.makeDirs()
+    folder.resolve("paths").writeText((resolved.roots.map { "source ${it.value}\n" } +
+      linking.libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
+  }
+
+  // For editors, in .kiln/scopes/name: that files in folder see libraries too, as a plugin's tests
+  // see what they're written with, which the project's other files don't.
+  @FileSystem rememberScope(name: String, folder: Path, libraries: List<CompiledLibrary>): Unit = {
+    scopes = path(".kiln/scopes")
+    scopes.makeDirs()
+    scopes.resolve(name).writeText((["folder ${folder.value}\n"] +
+      libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
+  }
+
+  @Building private runProgram(build: Build): Unit = {
+    project = build.project
+    program = project.output.resolve("bin").resolve(project.name)
+    exit = streaming(program.value, build.args) { forEachLine { println(it) } }
+    if (exit.code != 0) fail("${project.name} exited with ${exit.code}")
+  }
+}

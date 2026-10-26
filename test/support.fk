@@ -12,6 +12,9 @@ import fckt.io.Processes.*
 // The folder the tests run in, kiln's own.
 @Process here(): String = run("pwd", []).value.trim()
 
+// What a build script for a project in fckt starts with: fckt's plugin, applied.
+fckt = "import uk.m4xy.kiln.fckt.Fckt\n\nplugins = [Fckt()]\n\n"
+
 // A fresh folder for a test's projects.
 @FileSystem projects(name: String): Path = {
   folder = path("build/test-projects").resolve(name)

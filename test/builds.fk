@@ -12,7 +12,7 @@ prices = "module Prices {\n  total(items: List<Int>): Int = items.sum()\n}\n"
   shop = projects("shop")
   write(shop, "src/pricing/Prices.fk", prices)
   write(shop, "src/main.fk", "import fckt.io.Console\nimport pricing.Prices\n\nmain(args: List<String>) = println(\"total \${Prices.total([1, 2, 3])} for \${args.joinToString(\" \")}\")\n")
-  write(shop, "build.fk", """project = Project(name = "shop", version = "1.2.0")
+  write(shop, "build.fk", fckt + """project = Project(name = "shop", version = "1.2.0")
 
 tasks = [
   Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
@@ -32,7 +32,7 @@ tasks = [
 @Test @FileSystem @Process aTaskPartOfCheckRunsWithIt() = {
   lint = projects("lint")
   write(lint, "src/pricing/Prices.fk", prices)
-  write(lint, "build.fk", """project = Project(name = "lint")
+  write(lint, "build.fk", fckt + """project = Project(name = "lint")
 
 tasks = [
   Task("lint", "Looks at the code", partOf = ["check"], action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine")),
@@ -54,7 +54,8 @@ tasks = [
   shop = dir.resolve("shop")
   build = (uses: String, plugins: String) -> {
     write(shop, "settings.fk", "settings = Settings(uses = [$uses])\n")
-    write(shop, "build.fk", """import uk.m4xy.greeting.*
+    write(shop, "build.fk", """import uk.m4xy.kiln.fckt.Fckt
+import uk.m4xy.greeting.*
 
 project = Project(name = "shop")
 
@@ -62,7 +63,7 @@ module Howdy : Words {
   greeting(): String = "howdy"
 }
 
-plugins = [$plugins]
+plugins = [Fckt(), $plugins]
 """)
   }
   build("projectAt(\"../greeting\")", "Greetings(), Greetings(W = Howdy)")
@@ -87,11 +88,12 @@ plugins = [$plugins]
   write(dir, "shop/src/pricing/Prices.fk", prices)
   shop = dir.resolve("shop")
   write(shop, "settings.fk", "settings = Settings(uses = [projectAt(\"../greeting\")])\n")
-  build = (plugins: String) -> write(shop, "build.fk", """import uk.m4xy.greeting.*
+  build = (plugins: String) -> write(shop, "build.fk", """import uk.m4xy.kiln.fckt.Fckt
+import uk.m4xy.greeting.*
 
 project = Project(name = "shop")
 
-plugins = [$plugins]
+plugins = [Fckt(), $plugins]
 
 tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
 """)
@@ -110,7 +112,7 @@ tasks = [Task("greet", "Waves", action = build -> println("  *waves*"))]
 
 // A project, greeting, in dir, whose plugins greet, with Words, and clean.
 @FileSystem greeting(dir: Path): Unit = {
-  write(dir, "greeting/build.fk", "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
+  write(dir, "greeting/build.fk", fckt + "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n")
   write(dir, "greeting/src/uk/m4xy/greeting/Words.fk", "spec Words {\n  greeting(): String\n}\n")
   write(dir, "greeting/src/uk/m4xy/greeting/Hello.fk", "module Hello : Words {\n  greeting(): String = \"hello\"\n}\n")
   write(dir, "greeting/src/uk/m4xy/greeting/Greetings.fk", """import fckt.io.Console
@@ -153,13 +155,13 @@ module Cleaning : Plugin {
 // Libraries are looked for in settings.fk's repositories, in order: the first that has one gives it.
 @Test @FileSystem @Process repositoriesAreTriedInOrder() = {
   dir = projects("ordered")
-  write(dir, "words/build.fk", "project = Project(name = \"words\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
+  write(dir, "words/build.fk", fckt + "project = Project(name = \"words\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
   write(dir, "words/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"local\"\n}\n")
   assertEquals(0, kiln(dir.resolve("words"), ["publishLocal"]).code)
   // The team's repository has another words 1.0.0.
   path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(dir.resolve("team/uk.m4xy/words/1.0.0"))
   write(dir, "team/uk.m4xy/words/1.0.0/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"team\"\n}\n")
-  write(dir, "shop/build.fk", "project = Project(name = \"shop\", dependencies = [library(\"uk.m4xy:words:1.0.0\")])\n")
+  write(dir, "shop/build.fk", fckt + "project = Project(name = \"shop\", dependencies = [library(\"uk.m4xy:words:1.0.0\")])\n")
   write(dir, "shop/src/main.fk", "import fckt.io.Console\nimport uk.m4xy.words.Words\n\nmain() = println(Words.word)\n")
   order = (repositories: String) -> write(dir, "shop/settings.fk", "settings = Settings(repositories = [$repositories])\n")
   order("At(path(\"../team\")), Local")
@@ -190,4 +192,25 @@ module Cleaning : Plugin {
   write(shop, "build.fk", "project = Project(name = \"shop\")\n")
   write(shop, "settings.fk", "repositories = [Local]\n")
   expectContains(kiln(shop, ["tasks"]).value, "the main kiln adds to settings.fk:1:68: error: unknown name 'settings'")
+}
+
+// kiln knows nothing of what a project is in but what its plugins say: without one, a project has
+// only what every project has, and its own tasks, which may build it with anything.
+@Test @FileSystem @Process aProjectNeedNotBeInFckt() = {
+  site = projects("site")
+  write(site, "pages/index.txt", "hello")
+  write(site, "build.fk", """project = Project(name = "site")
+
+tasks = [
+  Task("pages", "Makes the pages", partOf = ["build"], action = build -> {
+    made = run("sh", ["-c", "mkdir -p build && tr a-z A-Z < pages/index.txt > build/index.txt"])
+    if (made.code != 0) fail(made.value)
+  }),
+]
+""")
+  listed = kiln(site, ["tasks"]).value
+  expectContains(listed, "  pages - Makes the pages")
+  if (listed.contains("compile")) error("a project without fckt's plugin has no compile:\n$listed")
+  assertEquals("> Task :check\n> Task :pages\n> Task :build\nBUILD SUCCESSFUL\n", kiln(site, ["build"]).value)
+  assertEquals("HELLO", site.resolve("build/index.txt").readText())
 }

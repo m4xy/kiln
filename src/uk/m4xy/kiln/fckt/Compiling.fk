@@ -8,6 +8,7 @@ import fckt.text.Digests.*
 import uk.m4xy.kiln.Dependencies.*
 import fckt.effects.Fail
 import fckt.io.Console
+import uk.m4xy.kiln.*
 
 // Compiling with fckt and OCaml. fckt's core, the standard library and each library are compiled once, into
 // kiln's cache, for this fckt and OCaml; a program is checked against the libraries' interfaces,
@@ -27,6 +28,26 @@ module Compiling {
     exit = run(command, args)
     if (exit.code != 0) fail("${command.substringAfterLast("/")} failed:\n${exit.value.trim()}")
     exit.value
+  }
+
+  // A program at program, which compile makes from OCaml it writes to the path it's given, unless
+  // it's up to date: compiled from inputs, a digest of what it's compiled from, as inputs makes;
+  // its OCaml is in output. Whether it was compiled.
+  @Building buildProgram(output: Path, program: Path, inputs: String, compile: @Building (Path) -> Unit): Boolean = {
+    ocaml = output.resolve("ocaml")
+    stamp = ocaml.resolve(program.name + ".inputs")
+    if (program.exists() && stamp.exists() && stamp.readText() == inputs) false
+    else {
+      ocaml.makeDirs()
+      stamp.delete()
+      when (program.parent) {
+        Some(dir) -> dir.makeDirs()
+        None -> Unit
+      }
+      compile(ocaml.resolve(program.name + ".ml"))
+      stamp.writeText(inputs)
+      true
+    }
   }
 
   // Where kiln keeps what it's compiled: ~/.kiln/cache, or KILN_CACHE.

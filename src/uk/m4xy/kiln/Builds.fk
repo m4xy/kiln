@@ -1,12 +1,9 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 import fckt.io.Files.*
-import fckt.io.Channels.*
 import fckt.io.Processes.*
 import fckt.io.Process
 import fckt.io.FileSystem
-import uk.m4xy.kiln.Dependencies.*
-import uk.m4xy.kiln.Compiling.*
 import fckt.effects.Failure.attempt
 import fckt.io.Console
 import fckt.effects.Fail
@@ -14,42 +11,36 @@ import fckt.collections.Sets.*
 import fckt.collections.Maps.*
 
 // Building a project: its tasks, and running them. kiln build, run in the folder of a build.fk,
-// calls runBuild(project, args) with what follows it on the command line, and the script's tasks
-// and plugins.
+// calls runBuild(project, args) with what follows it on the command line, and the script's tasks,
+// plugins and settings.
 module Builds {
-  // The tasks every project has. check is what checks the project, which is nothing but the tasks
-  // part of it, as a plugin's tests are; build and publishLocal check it.
+  // The tasks every project has, whatever it's in: what makes it, and what checks it, its plugins
+  // give, as tasks part of build and check.
   internal standardTasks: List<Task> = [
     Task("clean", "Deletes what's been built", action = build -> build.project.output.delete()),
-    Task("compile", "Compiles the program to output/bin", action = build -> compile(build.project)),
     Task("check", "Checks the project: runs the tasks part of it", action = build -> Unit),
-    Task("build", "Compiles and checks", dependsOn = ["compile", "check"], action = build -> Unit),
-    Task("run", "Runs the program, with what follows --", dependsOn = ["compile"], action = runProgram),
-    Task("publishLocal", "Compiles and checks, then publishes it as a library to ~/.kiln/repository", dependsOn = ["compile", "check"], action = build -> publishLocal(build.project)),
-    Task("roots", "Prints the folders its packages and its folder projects' are in, and the libraries it uses", action = build -> Unit),
+    Task("build", "Checks the project, and runs the tasks part of it", dependsOn = ["check"], action = build -> Unit),
   ]
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
   // each, as Build's args, for run. The tasks are every project's, plugins', and tasks, the
-  // script's own; project's libraries are looked for where settings, as written, say.
+  // script's own; project's libraries are looked for where settings, as written, say. With
+  // --quiet, only what the tasks print is printed, for another program to read.
   @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = [], settings: Settings = Settings()): Unit = {
-    names = args.takeWhile { it != "--" }
+    given = args.takeWhile { it != "--" }
+    quiet = given.contains("--quiet")
+    names = given.filter { it != "--quiet" }
     build = Build(project.copy(repositories = settings.from(settingsFolder()).repositories), args.dropWhile { it != "--" }.drop(1))
-    project = build.project
     result = attempt {
-      tasks = tasksOf(project, tasks, plugins)
-      // Only these, for another project that depends on this one.
-      if (names == ["roots"]) {
-        println(ResolvedText.of(resolve(project)))
-      }
-      else if (names.isEmpty() || names.contains("tasks")) listTasks(project, tasks)
+      tasks = tasksOf(build.project, tasks, plugins)
+      if (names.isEmpty() || names.contains("tasks")) listTasks(build.project, tasks)
       else {
         order(names, tasks, []).forEach { task ->
-          println("> Task :${task.name}")
+          if (!quiet) println("> Task :${task.name}")
           action = task.action
           action(build)
         }
-        println("BUILD SUCCESSFUL")
+        if (!quiet) println("BUILD SUCCESSFUL")
       }
     }
     when (result) {
@@ -93,112 +84,6 @@ module Builds {
     }
   }
 
-  // A program at program, which compile makes from OCaml it writes to the path it's given, unless
-  // it's up to date: compiled from inputs, a digest of what it's compiled from, as Compiling.inputs
-  // makes. Whether it was compiled.
-  @Building buildProgram(project: Project, program: Path, inputs: String, compile: @Building (Path) -> Unit): Boolean = {
-    ocaml = project.output.resolve("ocaml")
-    stamp = ocaml.resolve(program.name + ".inputs")
-    if (program.exists() && stamp.exists() && stamp.readText() == inputs) false
-    else {
-      ocaml.makeDirs()
-      stamp.delete()
-      when (program.parent) {
-        Some(dir) -> dir.makeDirs()
-        None -> Unit
-      }
-      compile(ocaml.resolve(program.name + ".ml"))
-      stamp.writeText(inputs)
-      true
-    }
-  }
-
-  // A library has no main: its packages are compiled as a library is, which checks all of them and
-  // that what it shows says its types; to output/library, its interface and its OCaml.
-  @Building private compile(project: Project): Unit = {
-    resolved = resolve(project)
-    linking = linking(resolved)
-    remember(resolved, linking)
-    inputs = inputs(linking, resolved.roots, if (project.main.exists()) [project.main] else [])
-    if (project.main.exists()) {
-      program = project.output.resolve("bin").resolve(project.name)
-      if (!buildProgram(project, program, inputs) { ml -> compileProgram(linking, project.sources, resolved.roots, project.main, ml, program) }) println("  up to date")
-    } else {
-      packages = project.sources.flatMap { packagesIn(it, it) }.distinct()
-      if (packages.isEmpty()) fail("there's no ${project.main.value}, and no packages in ${project.sources.map { it.value }.joinToString(", ")}")
-      library = project.output.resolve("library")
-      stamp = library.resolve("inputs")
-      if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
-      else {
-        library.delete()
-        library.makeDirs()
-        unit = unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
-        compilePackages(linking, project.sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
-        stamp.writeText(inputs)
-        println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
-      }
-    }
-  }
-
-  // Copies the packages under the group's folder, and what it depends on, to the repository:
-  // group/name/version, with src and a dependencies file.
-  @Building private publishLocal(project: Project): Unit = {
-    if (project.group.isEmpty()) fail("a library needs a group, which its packages go under: Project(group = \"uk.m4xy\", ...)")
-    project.dependencies.forEach { d ->
-      when (d) {
-        Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
-        Library(_) -> Unit
-        Kiln -> Unit
-      }
-    }
-    coordinates = Coordinates(project.group, project.name, project.version)
-    target = publishedAt(coordinates)
-    groupPath = project.group.replace(".", "/")
-    // Its packages are all its group's, so they never meet another library's.
-    project.sources.flatMap { packagesIn(it, it) }.forEach { p ->
-      if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
-    }
-    project.sources.forEach { root ->
-      if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
-    }
-    // Only once it's sure to work, what was published as this version goes.
-    target.delete()
-    project.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
-    target.resolve("dependencies").writeText(project.dependencies.flatMap { d ->
-      when (d) {
-        Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
-        Folder(_) -> []
-        Kiln -> []
-      }
-    }.joinToString(""))
-    println("  published ${CoordinatesText.of(coordinates)} to ${target.value}")
-  }
-
-  // For editors, in .kiln/paths: the folders the project's packages are in, a line each, and the
-  // interfaces of the libraries it uses, as compiled, so they can check its files as kiln does.
-  @FileSystem private remember(resolved: Resolved, linking: Linking): Unit = {
-    folder = path(".kiln")
-    folder.makeDirs()
-    folder.resolve("paths").writeText((resolved.roots.map { "source ${it.value}\n" } +
-      linking.libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
-  }
-
-  // For editors, in .kiln/scopes/name: that files in folder see libraries too, as a plugin's tests
-  // see what they're written with, which the project's other files don't.
-  @FileSystem rememberScope(name: String, folder: Path, libraries: List<CompiledLibrary>): Unit = {
-    scopes = path(".kiln/scopes")
-    scopes.makeDirs()
-    scopes.resolve(name).writeText((["folder ${folder.value}\n"] +
-      libraries.map { "library ${it.folder.resolve("interface").value}\n" }).joinToString(""))
-  }
-
   // Where settings.fk is, whose folders are written from there: KILN_SETTINGS, which kiln sets.
   @Process private settingsFolder(): Path = path(env("KILN_SETTINGS").getOrElse("."))
-
-  @Building private runProgram(build: Build): Unit = {
-    project = build.project
-    program = project.output.resolve("bin").resolve(project.name)
-    exit = streaming(program.value, build.args) { forEachLine { println(it) } }
-    if (exit.code != 0) fail("${project.name} exited with ${exit.code}")
-  }
 }

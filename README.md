@@ -1,9 +1,10 @@
 # kiln
 
-kiln builds [fckt](https://github.com/m4xy/fckt) projects: it compiles them, runs them, checks
-them, and publishes them as libraries for other projects to use. What it does is tasks; plugins
-bring more, as [fk-tests](https://github.com/m4xy/fk-tests) brings tests. It's written in fckt, and
-builds itself.
+kiln builds projects: it runs their tasks, each once and after what it depends on, and publishes
+them as libraries for other projects to use. What a project is in is its plugins' to know: kiln's
+own, `Fckt`, builds [fckt](https://github.com/m4xy/fckt), compiling, running and publishing it, and
+[fk-tests](https://github.com/m4xy/fk-tests) brings tests. Its build scripts are fckt, and it's
+written in fckt, and builds itself.
 
 A project is a folder with a `build.fk`, which says what the project is, in fckt; beside it, or
 above, `settings.fk` says what build scripts are compiled with:
@@ -15,11 +16,12 @@ settings = Settings(uses = [library("uk.m4xy:fk-tests-kiln:0.1.0")])
 
 ```kotlin
 // build.fk
+import uk.m4xy.kiln.fckt.Fckt
 import uk.m4xy.fktests.kiln.*
 
 project = Project(name = "shop")
 
-plugins = [FkTests()]
+plugins = [Fckt(), FkTests()]
 ```
 
 ```
@@ -52,30 +54,26 @@ It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in 
 
 ## Tasks
 
-`kiln build`, run in a project's folder, compiles `src/main.fk` and the packages in `src` to
-`build/bin/<name>`, then checks the project: runs the tasks part of `check`, any of which failing
-fails the build. kiln has none of its own; a plugin's are, as fk-tests' `test` is. Several tasks
-run in turn, each once and after the tasks it depends on: `kiln clean build`. What follows `--`
-goes to them, as to the program for `run`. `kiln -C dir build` builds the project in `dir`. What's
-up to date isn't done again: a program whose sources, libraries, fckt and OCaml are what they were
-isn't compiled again; `kiln clean` forgets.
+Every project has `clean`, `check` and `build`; its plugins bring the rest, as `Fckt` brings
+`compile`, part of `check`, and fk-tests `test`. Several tasks run in turn, each once and after the
+tasks it depends on, and the tasks part of it: `kiln clean build`. What follows `--` goes to them,
+as to the program for `run`. `kiln -C dir build` builds the project in `dir`; with `--quiet`, only
+what the tasks print is printed, for the project alone, for another program to read.
 
 | Task | |
 | --- | --- |
-| `compile` | Compiles the program to `build/bin/<name>`; a library, which has no `src/main.fk`, is compiled as a library, to `build/library` |
-| `check` | Checks the project: runs the tasks part of it, as a plugin's tests are |
-| `build` | `compile`, then `check` |
-| `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `clean` | Deletes `build` |
-| `publishLocal` | Compiles and checks, then publishes the project as a library to the local repository |
-| `roots` | Prints the folders the project's packages, and its folder projects', are in, and the libraries it uses: `root src`, `library uk.m4xy:json:1.2.0`, a line each, then its repositories, as `ResolvedText` writes and reads them |
+| `check` | Checks the project: runs the tasks part of it, as `compile` and a plugin's tests are; any of them failing fails it |
+| `build` | `check`, then the tasks part of it |
 | `tasks` | Lists the tasks |
 
 ## build.fk
 
-A build script is fckt, with a `project`. It imports kiln's library, `uk.m4xy.kiln`, with
-`Builds` and `Dependencies`, and `fckt.io`'s `Path`, `Paths`, `Files` and `Processes`, without
-saying. `Project`'s fields have defaults, but its `name`:
+A build script is fckt, with a `project`, and, if it has them, `plugins`, `tasks` and, beside it
+from `settings.fk`, `settings`; kiln compiles it as it is, with a `main` that hands them on, so
+what it leaves out is fckt's to say. It imports kiln's library, `uk.m4xy.kiln`, with `Builds` and
+`Dependencies`, and `fckt.io`'s `Path`, `Paths`, `Files` and `Processes`, `Console` and `Fail`,
+without saying. `Project`'s fields have defaults, but its `name`:
 
 ```kotlin
 project = Project(
@@ -83,17 +81,9 @@ project = Project(
   version = "0.1.0",
   group = "",                     // who publishes it: uk.m4xy
   dependencies = [],              // library("uk.m4xy:json:1.2.0"), projectAt("../pricing")
-  main = path("src/main.fk"),
-  sources = [path("src")],
   output = path("build"),
-  standardLibrary = true,         // fckt:std, which every project has unless it says not
 )
 ```
-
-Every project has fckt's standard library, `fckt:std`, the one beside the fckt it's built with,
-which kiln compiles once and gives it as it does any library: its files import what they use of it,
-`import fckt.io.Console`. A build script needn't import what it needs to say what its project is,
-`uk.m4xy.kiln.*`, paths, files and processes, nor `Console` and `Fail`.
 
 A task is a `Task(name, description, dependsOn, partOf, action)`, whose action is fckt that may
 print, use files and run programs (`@Building`), given the `Build`: the project, and what follows
@@ -101,12 +91,47 @@ print, use files and run programs (`@Building`), given the `Build`: the project,
 own by declaring `tasks`, which replace any of the same name, every project's or a plugin's:
 
 ```kotlin
+import uk.m4xy.kiln.fckt.Fckt
+
 project = Project(name = "shop", version = "1.2.0")
+
+plugins = [Fckt()]
 
 tasks = [
   Task("stamp", "Writes the version", dependsOn = ["compile"], action = build -> build.project.output.resolve("VERSION").writeText(build.project.version)),
   Task("lint", "Looks at the code", partOf = ["check"], action = build -> println("  looks fine")),
 ]
+```
+
+## fckt
+
+`Fckt`, in kiln's library, as `uk.m4xy.kiln.fckt.Fckt`, builds a project in fckt: it compiles
+`src/main.fk` and the packages in `src` to `build/bin/<name>`, or, with no `src/main.fk`, checks
+them as a library, to `build/library`. What's up to date isn't done again: a program whose sources,
+libraries, fckt and OCaml are what they were isn't compiled again; `kiln clean` forgets. Every
+project has fckt's standard library, `fckt:std`, the one beside the fckt it's built with, which
+`Fckt` compiles once and gives it as it does any library: its files import what they use of it,
+`import fckt.io.Console`.
+
+| Task | |
+| --- | --- |
+| `compile` | Compiles the program to `build/bin/<name>`, or the library to `build/library`; part of `check` |
+| `run` | Runs the program, with what follows `--`; it failing fails the build |
+| `publishLocal` | Checks the project, then publishes its packages, under its group's folder, as a library to the local repository |
+| `roots` | Prints the folders the project's packages, and its folder projects', are in, the libraries it uses, and its repositories: `root src`, `library uk.m4xy:json:1.2.0`, a line each, as `ResolvedText` writes and reads them; another project that depends on it asks for them, `kiln --quiet roots` |
+
+A project laid out otherwise says so with a module that follows `FcktConfiguration`, whose
+`layout()` is a `FcktLayout(main, sources, standardLibrary)`, as fckt's standard library does, which
+can't have itself:
+
+```kotlin
+import uk.m4xy.kiln.fckt.*
+
+module WithoutStd : FcktConfiguration {
+  layout(): FcktLayout = FcktLayout(standardLibrary = false)
+}
+
+plugins = [Fckt(WithoutStd)]
 ```
 
 ## Plugins
@@ -190,14 +215,14 @@ without plugins, or libraries from anywhere but `Local`, needs none.
 
 ## Libraries and dependencies
 
-A library is a project with a `group`, a reversed domain it owns, and its packages in a folder of
-that name, so two libraries' packages never meet. `kiln publishLocal` compiles and checks it, then
-copies its packages to the local repository, `~/.kiln/repository/<group>/<name>/<version>`, with a
-list of what it depends on. A package outside its group, or a dependency on a folder project, which
-might change under it, stops it.
+A library is a project with a `group`, a reversed domain it owns. Publishing it puts what its
+plugin publishes in the local repository, `~/.kiln/repository/<group>/<name>/<version>`, with a
+list of what it depends on, which is all of it kiln reads: a dependency on a folder project, which
+might change under it, stops it. `Fckt`'s `kiln publishLocal` checks it, and publishes its
+packages, which must be in a folder of the group's name, so two libraries' never meet.
 
 ```kotlin
-// units/build.fk, with its packages in src/uk/m4xy/units
+// units/build.fk, with its packages in src/uk/m4xy/units, and plugins = [Fckt()], as each has
 project = Project(name = "units", group = "uk.m4xy", version = "1.0.0")
 
 // money/build.fk
@@ -208,7 +233,7 @@ project = Project(name = "shop", dependencies = [library("uk.m4xy:money:2.1.0"),
 ```
 
 A project's packages are then found in its own folders, and its folder projects', with the
-libraries each uses, as `kiln -C <folder> roots` says. Where two ask for a library in different
+libraries each uses, as `kiln -C <folder> --quiet roots` says. Where two ask for a library in different
 versions, the higher is used.
 
 A library is compiled once, not with every build: the first build that uses it compiles it, after
@@ -245,7 +270,7 @@ back what it writes, as a test checks. The tasks are fckt too, in
 `src/uk/m4xy/kiln`: they call `fckt` and `ocamlopt`. `build` and `.kiln` are what to leave out of
 version control.
 
-Programs are compiled separately: fckt's core (`fckt --core`), the standard library, from the source
+`Fckt` compiles programs separately: fckt's core (`fckt --core`), the standard library, from the source
 `fckt --std-path` says is beside fckt, and each library (`fckt --library`) once, with `ocamlopt
 -c`, into the cache, in a folder for each fckt and OCaml; then each program on its own (`fckt -L`),
 which is linked with them. `fckt --version`, which says

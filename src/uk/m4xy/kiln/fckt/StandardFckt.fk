@@ -1,0 +1,3 @@
+// A fckt project as FcktLayout has one: its program in src/main.fk, its packages in src, and the
+// standard library.
+module StandardFckt : FcktConfiguration {}

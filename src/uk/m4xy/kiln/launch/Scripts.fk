@@ -5,8 +5,8 @@ import fckt.io.Console
 import fckt.io.Paths.*
 import fckt.io.Files.*
 import fckt.io.Processes.*
-import uk.m4xy.kiln.Compiling.compiler
-import uk.m4xy.kiln.Compiling.sourcesIn
+import uk.m4xy.kiln.fckt.Compiling.compiler
+import uk.m4xy.kiln.fckt.Compiling.sourcesIn
 
 // Scripts, settings.fk and build.fk: compiled, as they are, with a main kiln gives them.
 internal module Scripts {

@@ -1,0 +1,50 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.Processes.*
+import fckt.io.Process
+import fckt.io.FileSystem
+import fckt.effects.Fail
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.Dependencies.*
+import uk.m4xy.kiln.Folders.*
+
+// What a fckt project's programs are built from.
+module Resolving {
+  // The folders its packages are in, as layout says, then its folder projects', each once; and the
+  // libraries it uses, with theirs and its folder projects'. Where two ask for a library in
+  // different versions, the higher is used.
+  @FileSystem @Process resolve(project: Project, layout: FcktLayout): Resolved = {
+    found = project.dependencies.flatMap { d ->
+      when (d) {
+        Folder(folder) -> [folderResolved(folder)]
+        Library(_) -> []
+        Kiln -> []
+      }
+    }
+    Resolved(
+      (layout.sources + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
+      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
+      project.repositories,
+      layout.standardLibrary,
+    )
+  }
+
+  // A project's folders and libraries, as its own build says: kiln -C folder --quiet roots, which
+  // its fckt plugin's roots task prints as ResolvedText writes them.
+  @FileSystem @Process private folderResolved(folder: Path): Resolved = {
+    if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
+    exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "--quiet", "roots"])
+    if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
+    when (ResolvedText.read(exit.value)) {
+      Ok(resolved) -> resolved.from(folder)
+      Error(problem) -> fail("couldn't read the project in ${folder.value}: $problem")
+    }
+  }
+
+  // What's read of another project, with its folders made whole from folder, where it is.
+  Resolved.from(folder: Path): Resolved = this.copy(
+    roots = this.roots.map { folder.resolve(it.value) },
+    repositories = this.repositories.map { it.from(folder) },
+  )
+}

@@ -1,0 +1,11 @@
+// How a project is in fckt, which the Fckt plugin is configured with: a module that follows this,
+// saying only what isn't as FcktLayout's defaults have it:
+//
+//   module WithoutStd : FcktConfiguration {
+//     layout(): FcktLayout = FcktLayout(standardLibrary = false)
+//   }
+//
+//   plugins = [Fckt(WithoutStd)]
+spec FcktConfiguration {
+  layout(): FcktLayout = FcktLayout()
+}
