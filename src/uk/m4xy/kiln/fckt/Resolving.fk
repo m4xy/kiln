@@ -27,6 +27,7 @@ module Resolving {
       chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
       project.repositories,
       layout.standardLibrary,
+      (layout.ocamlPackages + found.flatMap { it.ocamlPackages }).distinct(),
     )
   }
 

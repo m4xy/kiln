@@ -62,7 +62,8 @@ module Compiling {
     toolchain = cache().resolve((fcktVersion() + output("ocamlopt", ["-version"])).md5().take(16))
     core = coreOf(toolchain)
     std = if (resolved.standardLibrary) [standardLibrary(toolchain, core)] else []
-    Linking(core, resolved.libraries.fold(std) { done, lib -> compileLibrary(toolchain, core, std, resolved.libraries, lib, [], done, resolved.repositories) })
+    libraries = resolved.libraries.fold(std) { done, lib -> compileLibrary(toolchain, core, std, resolved.libraries, lib, [], done, resolved.repositories) }
+    Linking(core, libraries, (resolved.ocamlPackages + libraries.flatMap { it.ocamlPackages }).distinct())
   }
 
   // What fckt --version says.
@@ -103,17 +104,38 @@ module Compiling {
   // The OCaml at ml, linked with the core and the libraries, the standard library among them, to program.
   @Building linkProgram(linking: Linking, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail("ocamlopt", ["-w", "-a", "-I", "+unix", "-I", linking.core.value] + libraries.flatMap { ["-I", it.folder.value] } +
-      ["unix.cmxa", linking.core.resolve("fckt_core.cmx").value] + libraries.map { it.folder.resolve("${it.unit}.cmx").value } +
+    ocamlopt(linking.ocamlPackages, true, ["-w", "-a", "-I", linking.core.value] + libraries.flatMap { ["-I", it.folder.value] } +
+      [linking.core.resolve("fckt_core.cmx").value] + libraries.map { it.folder.resolve("${it.unit}.cmx").value } +
       [ml.value, "-o", program.value])
   }
+
+  // Runs ocamlopt with args, with unix and packages, which ocamlfind finds where opam installed
+  // them; and, to link, links them.
+  @Building private ocamlopt(packages: List<String>, link: Boolean, args: List<String>): Unit =
+    if (packages.isEmpty()) runOrFail("ocamlopt", ["-I", "+unix"] + (if (link) ["unix.cmxa"] else []) + args)
+    else {
+      (command, before) = ocamlfind()
+      runOrFail(command, before + ["ocamlopt", "-package", (["unix"] + packages).joinToString(",")] + (if (link) ["-linkpkg"] else []) + args)
+    }
+
+  // How to run ocamlfind: where the shell finds it, or through opam, in its current switch, so
+  // opam's environment needn't be in the shell's.
+  @Building private ocamlfind(): (String, List<String>) =
+    if (onPath("ocamlfind")) ("ocamlfind", [])
+    else if (onPath("opam")) ("opam", ["exec", "--", "ocamlfind"])
+    else fail("a library calls OCaml packages, which need ocamlfind: install opam, then opam install ocamlfind and the packages")
+
+  @Process private onPath(command: String): Boolean = output("sh", ["-c", "command -v \"\$1\" || true", "sh", command]).trim().isNotEmpty()
 
   // packages, from roots, as a library: OCaml at ml, which is the module unit, and its interface,
   // which programs that use it are checked against, in folder interface.
   @Building internal compilePackages(linking: Linking, own: List<Path>, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
     runOrFail(compiler(), ["--library", interface.value, "-o", ml.value, "--no-std"] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages)
-    runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", "-I", linking.core.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
+    ocamlopt(linking.ocamlPackages, false, ["-c", "-w", "-a", "-I", linking.core.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
   }
+
+  // Where a published library lists the OCaml packages it calls, one a line.
+  packagesFile: String = "ocaml-packages"
 
   // The OCaml module a library is: uk_m4xy_json for uk.m4xy:json.
   internal unitOf(group: String, name: String): String =
@@ -200,7 +222,11 @@ module Compiling {
   // lib's packages, compiled with the libraries it uses: once for each source it's published
   // with, and each set of those, so publishing it again compiles it again.
   @Building private compileOne(toolchain: Path, core: Path, lib: Coordinates, uses: List<CompiledLibrary>, repositories: List<Repository>): CompiledLibrary = {
-    src = folderOf(lib, repositories).getOrElse(publishedAt(lib)).resolve("src")
+    published = folderOf(lib, repositories).getOrElse(publishedAt(lib))
+    src = published.resolve("src")
+    // What it calls of OCaml's packages, as published, and what the libraries it uses do.
+    ocamlPackages = ((if (published.resolve(packagesFile).exists()) published.resolve(packagesFile).readLines().filter { it.isNotBlank() } else []) +
+      uses.flatMap { it.ocamlPackages }).distinct()
     files = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }
     key = ([CoordinatesText.of(lib)] + files + uses.map { it.folder.name }).joinToString("\n").md5().take(12)
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")
@@ -209,10 +235,10 @@ module Compiling {
       println("  compiling ${CoordinatesText.of(lib)}")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(core, uses), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
+      compilePackages(Linking(core, uses, ocamlPackages), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
       folder.resolve("done").writeText("")
     }
-    CompiledLibrary(lib, folder, unit)
+    CompiledLibrary(lib, folder, unit, ocamlPackages)
   }
 
   // The .fk files in folder and those in it.

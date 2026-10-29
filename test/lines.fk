@@ -9,7 +9,7 @@ import uk.m4xy.kiln.fckt.Resolving.*
 // Each format reads back what it writes: all of it, with folders as they were written.
 @Test whatAProjectIsBuiltFromIsReadBack() = {
   assertReadsBack(ResolvedText, Resolved([path("src"), path("/shared/src")], [Coordinates("uk.m4xy", "json", "1.2.0")], [At(path("../team")), Local], false))
-  assertReadsBack(ResolvedText, Resolved([path("src")], [], [Local], true))
+  assertReadsBack(ResolvedText, Resolved([path("src")], [], [Local], true, ["ssl", "yojson"]))
 }
 
 @Test coordinatesAndRepositoriesAreReadBack() = {
@@ -43,5 +43,5 @@ import uk.m4xy.kiln.fckt.Resolving.*
   assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), CoordinatesText.read("json"))
   assertEquals(Error("a repository is local or at a folder, not remote"), RepositoryText.read("remote"))
   // Anything else kiln roots says isn't taken for a folder.
-  assertEquals(Error("kiln roots said 'compiling json', which is neither a root, a library nor a repository"), ResolvedText.read("root src\ncompiling json"))
+  assertEquals(Error("kiln roots said 'compiling json', which is none of a root, a library, a repository or an OCaml package"), ResolvedText.read("root src\ncompiling json"))
 }

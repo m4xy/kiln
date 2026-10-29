@@ -1,6 +1,6 @@
 import fckt.io.Path
 
-// What a project's programs are linked with: fckt's core, compiled once, in its folder, and the
+// What a project's programs are linked with: fckt's core, compiled once, in its folder; the
 // libraries, compiled once each, each after those it uses: the standard library first, unless the
-// project goes without it.
-type Linking(core: Path, libraries: List<CompiledLibrary>)
+// project goes without it; and the OCaml packages they and the project call.
+type Linking(core: Path, libraries: List<CompiledLibrary>, ocamlPackages: List<String> = [])

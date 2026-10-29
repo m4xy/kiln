@@ -1,12 +1,14 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 
-// Where a fckt project's code is: main, the program's file, with its main, which a library has
-// none of; sources, the folders its packages are in; and whether it has the standard library,
-// fckt:std, the one beside the fckt it's built with, as every project does unless it says
-// otherwise: the standard library's own doesn't.
+// Where a fckt project's code is, and what it's built with: main, the program's file, with its
+// main, which a library has none of; sources, the folders its packages are in; whether it has the
+// standard library, fckt:std, the one beside the fckt it's built with, as every project does unless
+// it says otherwise: the standard library's own doesn't; and the OCaml packages its externals call,
+// as opam installs them, ["ssl"], which every program that uses it is linked with.
 type FcktLayout(
   main: Path = path("src/main.fk"),
   sources: List<Path> = [path("src")],
   standardLibrary: Boolean = true,
+  ocamlPackages: List<String> = [],
 )

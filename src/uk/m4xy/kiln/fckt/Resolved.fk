@@ -11,4 +11,6 @@ type Resolved(
   // Whether its programs have the standard library, fckt:std, which the fckt plugin gives every
   // project unless it says it goes without.
   standardLibrary: Boolean = true,
+  // The OCaml packages its and its folder projects' externals call.
+  ocamlPackages: List<String> = [],
 )

@@ -126,10 +126,10 @@ project has fckt's standard library, `fckt:std`, the one beside the fckt it's bu
 | `compile` | Compiles the program to `build/bin/<name>`, or the library to `build/library`; part of `check` |
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `publishLocal` | Checks the project, then publishes its packages, under its group's folder, as a library to the local repository |
-| `roots` | Prints the folders the project's packages, and its folder projects', are in, the libraries it uses, and its repositories: `root src`, `library uk.m4xy:json:1.2.0`, a line each, as `ResolvedText` writes and reads them; another project that depends on it asks for them, `kiln --quiet roots` |
+| `roots` | Prints the folders the project's packages, and its folder projects', are in, the libraries it uses, and its repositories: `root src`, `library uk.m4xy:json:1.2.0`, and any OCaml packages, `ocaml-package ssl`, a line each, as `ResolvedText` writes and reads them; another project that depends on it asks for them, `kiln --quiet roots` |
 
 A project laid out otherwise says so with a module that follows `FcktConfiguration`, whose
-`layout()` is a `FcktLayout(main, sources, standardLibrary)`, as fckt's standard library does, which
+`layout()` is a `FcktLayout(main, sources, standardLibrary, ocamlPackages)`, as fckt's standard library does, which
 can't have itself:
 
 ```kotlin
@@ -141,6 +141,13 @@ module WithoutStd : FcktConfiguration {
 
 plugins = [Fckt(WithoutStd)]
 ```
+
+A project whose externals call OCaml packages, as installed by [opam](https://opam.ocaml.org), lists
+them in `ocamlPackages`: `FcktLayout(ocamlPackages = ["ssl"])`, as fk-http does. It's then compiled
+and linked through `ocamlfind`, or through `opam exec -- ocamlfind` where `ocamlfind` isn't on PATH.
+The packages are published with the library, in its `ocaml-packages` file, and passed on to folder
+projects that depend on it, through `kiln roots`. So a program that uses it, directly or through
+another library, is linked with them without saying so; their names are all it needs.
 
 ## Plugins
 

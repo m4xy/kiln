@@ -59,7 +59,10 @@ module Programs {
     layout.sources.forEach { root ->
       if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
     }
-    publish(project) { target -> layout.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) } }
+    publish(project) { target ->
+      layout.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
+      if (layout.ocamlPackages.isNotEmpty()) target.resolve(Compiling.packagesFile).writeText(layout.ocamlPackages.map { "$it\n" }.joinToString(""))
+    }
   }
 
   // For editors, in .kiln/paths: the folders the project's packages are in, a line each, and the

@@ -2,5 +2,6 @@ import fckt.io.Path
 import uk.m4xy.kiln.*
 
 // A library compiled to OCaml, once, in kiln's cache: in its folder, its interface, which
-// programs that use it are checked against, and the OCaml module unit, which they're linked with.
-type CompiledLibrary(coordinates: Coordinates, folder: Path, unit: String)
+// programs that use it are checked against, and the OCaml module unit, which they're linked with,
+// with the OCaml packages it and the libraries it uses call.
+type CompiledLibrary(coordinates: Coordinates, folder: Path, unit: String, ocamlPackages: List<String> = [])
