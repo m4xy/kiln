@@ -8,10 +8,11 @@ import fckt.effects.Fail
 import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Dependencies.*
 import uk.m4xy.kiln.Folders.*
+import uk.m4xy.kiln.fckt.Sources.*
 
 // What a fckt project's programs are built from.
 module Resolving {
-  // The folders its packages are in, as layout says, then its folder projects', each once; and the
+  // The folders its packages are in, as layout says, and those its processors wrote, then its folder projects', each once; and the
   // libraries it uses, with theirs and its folder projects'. Where two ask for a library in
   // different versions, the higher is used.
   @FileSystem @Process resolve(project: Project, layout: FcktLayout): Resolved = {
@@ -23,7 +24,7 @@ module Resolving {
       }
     }
     Resolved(
-      (layout.sources + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
+      (layout.allSources() + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
       chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
       project.repositories,
       layout.standardLibrary,

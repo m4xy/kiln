@@ -149,6 +149,31 @@ The packages are published with the library, in its `ocaml-packages` file, and p
 projects that depend on it, through `kiln roots`. So a program that uses it, directly or through
 another library, is linked with them without saying so; their names are all it needs.
 
+### Processors
+
+A processor writes code from what a project declares, before it's compiled, as a serialization
+library writes a serializer for each type annotated for it. It's a module in a library that follows
+[fckt.symbols](https://github.com/m4xy/fckt/tree/main/symbols)' `Processor`, and a project lists it,
+by its full name, with the libraries it's in:
+
+```kotlin
+module Described : FcktConfiguration {
+  layout(): FcktLayout = FcktLayout(processors = [
+    Processor("uk.m4xy.describe.Describer", [library("uk.m4xy:describe:0.1.0")]),
+  ])
+}
+
+plugins = [Fckt(Described), FkTests(StandardTests, Described)]
+```
+
+A project with processors has the task `process`, which `compile`, and fk-tests' `test`, depend on.
+It makes each processor a program, of its libraries and a main that has `Processing` run it, gives
+it what `fckt --symbols` says the project's sources declare, and has it write its files to
+`build/generated/<module>`, the layout's `generated`, emptied first. Those folders are then the
+project's sources too: its code, and its tests, use what was written as their own, and it's
+published with the library. What a processor stops at, it says where, as a compiler's errors do,
+and the build fails. A processor runs again only when the project's sources, or it, have changed.
+
 ## Plugins
 
 A plugin is a module that follows kiln's `spec Plugin`, which says its `name()` and the

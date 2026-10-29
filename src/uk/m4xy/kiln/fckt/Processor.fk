@@ -1,0 +1,8 @@
+import uk.m4xy.kiln.Dependency
+
+// What writes code from what a project declares, before it's compiled: a module that follows
+// fckt.symbols' Processor, by its full name, and the libraries it's in, as a serialization library
+// writes a serializer for each type annotated for it:
+//
+//   Processor("uk.m4xy.serialization.processor.Serializers", [library("uk.m4xy:fk-serialization-processor:0.1.0")])
+type Processor(moduleName: String, uses: List<Dependency>)

@@ -1,0 +1,58 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.FileSystem
+import fckt.io.Console
+import fckt.text.Digests.*
+import uk.m4xy.kiln.*
+import uk.m4xy.kiln.fckt.Sources.*
+
+// Running a project's processors, as its process task does: each is made a program, of its
+// libraries and a main that has fckt.symbols' Processing run it, which is given what fckt --symbols
+// says the project declares, and writes its code to a folder of the layout's generated. The project's
+// packages are then those in its sources, and in what each processor wrote.
+module Processors {
+  // Runs each of the layout's processors, unless what it would be given and it are as they were.
+  @Building processAll(project: Project, layout: FcktLayout): Unit = layout.processors.forEach { process(project, layout, it) }
+
+  @Building private process(project: Project, layout: FcktLayout, processor: Processor): Unit = {
+    folder = project.output.resolve("processors").resolve(processor.moduleName)
+    program = buildProcessor(project, folder, processor)
+    resolved = Resolving.resolve(project, layout)
+    // What it's given is what the project declares, not what processors wrote from it.
+    written = layout.processors.map { layout.generatedBy(it) }
+    roots = resolved.roots.filter { !written.contains(it) }
+    linking = Compiling.linking(resolved)
+    generated = layout.generatedBy(processor)
+    stamp = folder.resolve("generated")
+    inputs = Compiling.inputs(linking, layout.sources, []) + program.readBytes().md5()
+    if (stamp.exists() && stamp.readText() == inputs && generated.isDirectory()) println("  ${processor.moduleName}: up to date")
+    else {
+      stamp.delete()
+      symbols = folder.resolve("symbols")
+      Compiling.runOrFail(Compiling.compiler(), ["--symbols", symbols.value, "--no-std"] + Compiling.sourceArgs(layout.sources, roots) + Compiling.interfaces(linking.libraries))
+      Compiling.runOrFail(program.value, [symbols.value, generated.value])
+      stamp.writeText(inputs)
+      println("  ${processor.moduleName}: wrote ${filesIn(generated).size} file${if (filesIn(generated).size == 1) "" else "s"}")
+    }
+  }
+
+  // The processor as a program, in folder: its libraries, and a main that runs it.
+  @Building private buildProcessor(project: Project, folder: Path, processor: Processor): Path = {
+    main = folder.resolve("main.fk")
+    text = "import fckt.symbols.processing.Processing\nimport ${processor.moduleName}\n\nmain(args: List<String>) = Processing.run(${processor.moduleName.substringAfterLast(".")}, args)\n"
+    folder.makeDirs()
+    if (!main.exists() || main.readText() != text) main.writeText(text)
+    layout = FcktLayout(main = main, sources = [folder])
+    resolved = Resolving.resolve(project.copy(dependencies = processor.uses), layout)
+    linking = Compiling.linking(resolved)
+    program = folder.resolve(processor.moduleName.substringAfterLast("."))
+    Compiling.buildProgram(folder, program, Compiling.inputs(linking, resolved.roots, [])) { ml ->
+      Compiling.compileProgram(linking, [folder], resolved.roots, main, ml, program)
+    }
+    program
+  }
+
+  @FileSystem private filesIn(folder: Path): List<Path> =
+    folder.listFiles().flatMap { if (it.isDirectory()) filesIn(it) else [it] }
+}

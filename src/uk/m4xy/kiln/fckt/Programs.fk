@@ -10,13 +10,16 @@ import fckt.effects.Fail
 import uk.m4xy.kiln.*
 import uk.m4xy.kiln.Dependencies.*
 import uk.m4xy.kiln.Publishing.*
+import uk.m4xy.kiln.fckt.Sources.*
 
 // A fckt project's programs and library: what the Fckt plugin's tasks do, for a project laid out as
 // its layout says.
 module Programs {
-  // The plugin's tasks, for a project laid out as layout says.
-  tasks(layout: FcktLayout): List<Task> = [
-    Task(FcktTasks.compile, "Compiles the program to output/bin, or a library, which has no main, to output/library", partOf = [Check], action = build -> compile(build.project, layout)),
+  // The plugin's tasks, for a project laid out as layout says: process, only if it has processors.
+  tasks(layout: FcktLayout): List<Task> = (if (layout.processors.isEmpty()) [] else [
+    Task(FcktTasks.process, "Writes code from what the project declares, with its processors", action = build -> Processors.processAll(build.project, layout)),
+  ]) + [
+    Task(FcktTasks.compile, "Compiles the program to output/bin, or a library, which has no main, to output/library", dependsOn = if (layout.processors.isEmpty()) [] else [FcktTasks.process], partOf = [Check], action = build -> compile(build.project, layout)),
     Task(FcktTasks.run, "Runs the program, with what follows --", dependsOn = [FcktTasks.compile], action = build -> runProgram(build)),
     Task(FcktTasks.publishLocal, "Checks it, then publishes it as a library to ~/.kiln/repository", dependsOn = [Check], action = build -> publishLocal(build.project, layout)),
     Task(FcktTasks.roots, "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories", action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout)))),
@@ -25,16 +28,17 @@ module Programs {
   // A library has no main: its packages are compiled as a library is, which checks all of them and
   // that what it shows says its types; to output/library, its interface and its OCaml.
   @Building private compile(project: Project, layout: FcktLayout): Unit = {
+    sources = layout.allSources()
     resolved = Resolving.resolve(project, layout)
     linking = Compiling.linking(resolved)
     remember(resolved, linking)
     inputs = Compiling.inputs(linking, resolved.roots, if (layout.main.exists()) [layout.main] else [])
     if (layout.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
-      if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, layout.sources, resolved.roots, layout.main, ml, program) }) println("  up to date")
+      if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, sources, resolved.roots, layout.main, ml, program) }) println("  up to date")
     } else {
-      packages = layout.sources.flatMap { Compiling.packagesIn(it, it) }.distinct()
-      if (packages.isEmpty()) fail("there's no ${layout.main.value}, and no packages in ${layout.sources.map { it.value }.joinToString(", ")}")
+      packages = sources.flatMap { Compiling.packagesIn(it, it) }.distinct()
+      if (packages.isEmpty()) fail("there's no ${layout.main.value}, and no packages in ${sources.map { it.value }.joinToString(", ")}")
       library = project.output.resolve("library")
       stamp = library.resolve("inputs")
       if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
@@ -42,7 +46,7 @@ module Programs {
         library.delete()
         library.makeDirs()
         unit = Compiling.unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
-        Compiling.compilePackages(linking, layout.sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
+        Compiling.compilePackages(linking, sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
         stamp.writeText(inputs)
         println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
       }
@@ -53,14 +57,16 @@ module Programs {
   // library's, in src, as the library's source.
   @Building private publishLocal(project: Project, layout: FcktLayout): Unit = {
     groupPath = project.group.replace(".", "/")
-    layout.sources.flatMap { Compiling.packagesIn(it, it) }.forEach { p ->
+    sources = layout.allSources()
+    sources.flatMap { Compiling.packagesIn(it, it) }.forEach { p ->
       if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
     }
     layout.sources.forEach { root ->
       if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
     }
     publish(project) { target ->
-      layout.sources.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
+      // What its processors wrote is published as the rest of its code is.
+      sources.filter { it.resolve(groupPath).isDirectory() }.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
       if (layout.ocamlPackages.isNotEmpty()) target.resolve(Compiling.packagesFile).writeText(layout.ocamlPackages.map { "$it\n" }.joinToString(""))
     }
   }

@@ -1,0 +1,14 @@
+import fckt.io.Path
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import fckt.io.FileSystem
+
+// Where a fckt project's packages are: the folders its layout names, and those its processors write.
+module Sources {
+  // The folder the processor writes to.
+  FcktLayout.generatedBy(processor: Processor): Path = this.generated.resolve(processor.moduleName)
+
+  // The project's sources, then each folder its processors wrote.
+  @FileSystem FcktLayout.allSources(): List<Path> =
+    this.sources + this.processors.map { this.generatedBy(it) }.filter { it.isDirectory() }
+}
