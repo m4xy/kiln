@@ -230,16 +230,31 @@ module Compiling {
     libraries: List<CompiledLibrary>,
   ): List<String> = libraries.flatMap { ["-L", it.folder.resolve("interface").value] }
 
+  // folder, made by make where it says, beside folder, and moved there once it's whole, unless it
+  // is already: so kiln running more than once at a time sees each folder whole or not at all, and
+  // the first to make it keeps it.
+  @Building internal made(folder: Path, make: @Building (Path) -> Unit): Unit =
+    if (!folder.resolve("done").exists()) {
+      folder.parent.forEach { it.makeDirs() }
+      at = path(output("mktemp", ["-d", folder.value + ".XXXXXX"]).trim())
+      make(at)
+      at.resolve("done").writeText("")
+      if (!folder.resolve("done").exists()) folder.delete()
+      if (!moved(at.value, folder.value)) at.delete()
+    }
+
+  private external moved(
+    from: String,
+    to: String,
+  ): Boolean = "(fun a b -> try Sys.rename a b; true with Sys_error _ -> false) from to"
+
   // fckt's core, compiled once: fckt_core, in toolchain's core.
   @Building private coreOf(toolchain: Path): Path = {
     folder = toolchain.resolve("core")
-    if (!folder.resolve("done").exists()) {
-      folder.delete()
-      folder.makeDirs()
-      ml = folder.resolve("fckt_core.ml")
+    made(folder) { at ->
+      ml = at.resolve("fckt_core.ml")
       runOrFail(compiler(), ["--core", "-o", ml.value])
       runOrFail("ocamlopt", ["-c", "-w", "-a", "-I", "+unix", ml.value])
-      folder.resolve("done").writeText("")
     }
     folder
   }
@@ -254,20 +269,17 @@ module Compiling {
     ).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }.joinToString("\n").md5().take(16)
     folder = toolchain.resolve("std-$key")
     unit = "fckt_std"
-    if (!folder.resolve("done").exists()) {
+    made(folder) { at ->
       println("  compiling the standard library")
-      folder.delete()
-      folder.makeDirs()
       compilePackages(
         Linking(core, []),
         [src],
         [src],
         packagesIn(src, src),
         unit,
-        folder.resolve("$unit.ml"),
-        folder.resolve("interface"),
+        at.resolve("$unit.ml"),
+        at.resolve("interface"),
       )
-      folder.resolve("done").writeText("")
     }
     CompiledLibrary(Coordinates("fckt", "std", fcktVersion()), folder, unit)
   }
@@ -364,20 +376,17 @@ module Compiling {
     )
     folder = toolchain.resolve("libraries/${lib.group}/${lib.name}/${lib.version}-$key")
     unit = unitOf(lib.group, lib.name)
-    if (!folder.resolve("done").exists()) {
+    made(folder) { at ->
       println("  compiling ${CoordinatesText.of(lib)}")
-      folder.delete()
-      folder.makeDirs()
       compilePackages(
         Linking(core, uses, ocamlPackages),
         [src],
         [src],
         packagesIn(src, src),
         unit,
-        folder.resolve("$unit.ml"),
-        folder.resolve("interface"),
+        at.resolve("$unit.ml"),
+        at.resolve("interface"),
       )
-      folder.resolve("done").writeText("")
     }
     CompiledLibrary(lib, folder, unit, ocamlPackages)
   }

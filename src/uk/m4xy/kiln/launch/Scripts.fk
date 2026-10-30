@@ -93,19 +93,16 @@ internal module Scripts {
     ).md5().take(16)
     folder = linking.core.resolve("../kiln-$key")
     unit = "uk_m4xy_kiln"
-    if (!folder.resolve("done").exists()) {
-      folder.delete()
-      folder.makeDirs()
+    Compiling.made(folder) { at ->
       Compiling.compilePackages(
         linking,
         [src],
         [src],
         Compiling.packagesIn(src, src),
         unit,
-        folder.resolve("$unit.ml"),
-        folder.resolve("interface"),
+        at.resolve("$unit.ml"),
+        at.resolve("interface"),
       )
-      folder.resolve("done").writeText("")
     }
     Linking(
       linking.core,
