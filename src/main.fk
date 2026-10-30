@@ -5,12 +5,14 @@ import fckt.io.Paths.*
 import fckt.io.Files.*
 import fckt.io.Processes.*
 import uk.m4xy.kiln.launch.Launch
+import uk.m4xy.kiln.launch.NewProjects
 import uk.m4xy.kiln.launch.version
 
 // kiln: builds the project whose build.fk is in this folder, or with -C, in another, as Launch
 // does.
 
 usage = """usage: kiln [-C <dir>] [--quiet] <task>... [-- <args>]
+       kiln new <name> [--library <group>]
 
 Builds the project whose build.fk is in this folder, or with -C, in dir: kiln clean, check, build,
 the tasks its plugins make, or tasks to list them. build.fk, which is fckt, declares project =
@@ -19,7 +21,9 @@ applies: plugins = [Fckt()] builds fckt, with compile, run, publishLocal and roo
 only what the tasks print is printed, for this project alone. settings.fk, beside it or above, declares settings = Settings(...): the repositories
 libraries are looked for in, in order; what build scripts use, for their plugins; and the projects
 built with the one in its folder. What follows -- goes to the tasks, as to the program for run.
-FCKT says where fckt is, if the shell can't find it."""
+kiln new makes a project to start from, in a folder of that name: a program, or with
+--library, a library whose packages are under the group. FCKT says where fckt is, if the shell
+can't find it."""
 
 @Console @FileSystem @Process main(args: List<String>) = {
   rest = when (args) {
@@ -35,6 +39,8 @@ FCKT says where fckt is, if the shell can't find it."""
   } else if (rest == ["--help"] || rest == ["-h"]) {
     println(usage)
     0
+  } else if (rest.firstOrNone() == Some("new")) {
+    NewProjects.make(rest.drop(1))
   } else {
     Launch.start(rest)
   }

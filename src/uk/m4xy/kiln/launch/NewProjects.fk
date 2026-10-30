@@ -1,0 +1,93 @@
+import fckt.io.Path
+import fckt.io.FileSystem
+import fckt.io.Console
+import fckt.io.Paths.*
+import fckt.io.Files.*
+
+// kiln new: a project to start from, in a folder of its own, which kiln build builds and tests as
+// it is. A program says hello, with what it says in a module, which a test checks; a library, with
+// --library and its group, is that module, in a package under the group, and its test.
+internal module NewProjects {
+  // Makes the project args say, and gives kiln's exit code: 2 if they don't say one.
+  @Console @FileSystem make(args: List<String>): Int = when (args) {
+    [name] -> made(name, None)
+    [name, "--library", group] -> made(name, Some(group))
+    ["--library", group, name] -> made(name, Some(group))
+    else -> {
+      println("usage: kiln new <name> [--library <group>]")
+      2
+    }
+  }
+
+  @Console @FileSystem private made(name: String, group: Option<String>): Int = {
+    folder = path(name)
+    pkg = packageOf(name)
+    groupOk = group.map { g -> g.split(".").all { isPackage(it) } }.getOrElse(true)
+    if (folder.exists() && folder.listFiles().isNotEmpty()) {
+      println("kiln: there's already a $name, which isn't empty")
+      1
+    }
+    else if (pkg.isEmpty() || !groupOk) {
+      println(
+        "kiln: a project's name starts with a letter, and a group is a package's name, as com.example",
+      )
+      2
+    }
+    else {
+      packageName = group.map { "$it.$pkg" }.getOrElse(pkg)
+      sources = packageName.replace(".", "/")
+      write(folder, ".gitignore", "build/\n.kiln/\n")
+      write(
+        folder,
+        "settings.fk",
+        "settings = Settings(uses = [library(\"uk.m4xy:fk-tests-kiln:0.1.0\")])\n",
+      )
+      write(folder, "build.fk", buildScript(name, group))
+      write(folder, "src/$sources/Greetings.fk", greetings(packageName))
+      if (group.isNone()) write(folder, "src/main.fk", program(packageName)) else Unit
+      write(folder, "test/greetings.fk", test(packageName))
+      println("  made $name: cd $name, then kiln build")
+      0
+    }
+  }
+
+  private buildScript(name: String, group: Option<String>): String = {
+    grouped = group.map { "  group = \"$it\",\n" }.getOrElse("")
+    "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.fktests.kiln.*\n\n" +
+      "project = Project(\n  name = \"$name\",\n$grouped  version = \"0.1.0\",\n)\n\n" +
+      "plugins = [Fckt(), FkTests()]\n"
+  }
+
+  private greetings(packageName: String): String =
+    "// What $packageName says.\nmodule Greetings {\n" +
+      "  greeting(name: String): String = \"Hello, \$name!\"\n}\n"
+
+  private program(packageName: String): String =
+    "import fckt.io.Console\nimport $packageName.Greetings\n\n" +
+      "main() = println(Greetings.greeting(\"world\"))\n"
+
+  private test(packageName: String): String =
+    "import uk.m4xy.fktests.api.Test\nimport $packageName.Greetings\n\n" +
+      "@Test greetsByName() = assertEquals(\"Hello, fckt!\", Greetings.greeting(\"fckt\"))\n"
+
+  // The package a project's named for: its name's letters and digits, lower-cased: helloworld, for
+  // Hello-World.
+  private packageOf(name: String): String = {
+    kept = name.lowercase().toList().filter { it.isLetterOrDigit() }
+    when (kept) {
+      [first, *_] if first.isLetter() -> kept.map { it.toString() }.joinToString("")
+      else -> ""
+    }
+  }
+
+  private isPackage(part: String): Boolean = when (part.toList()) {
+    [first, *rest] -> first.isLowerCase() && rest.all { it.isLetterOrDigit() || it == '_' }
+    [] -> false
+  }
+
+  @FileSystem private write(folder: Path, file: String, text: String): Unit = {
+    target = folder.resolve(file)
+    target.parent.forEach { it.makeDirs() }
+    target.writeText(text)
+  }
+}
