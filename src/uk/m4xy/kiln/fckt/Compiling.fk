@@ -172,18 +172,18 @@ module Compiling {
   }
 
   // The standard library, fckt:std, compiled once, with the core, from the source beside the fckt
-  // that compiles it, so it's always that fckt's: Fckt_std, in toolchain's std, under a digest of
+  // that compiles it, so it's always that fckt's: fckt_std, in toolchain's std, under a digest of
   // that source, as it can change while fckt doesn't.
   @Building private standardLibrary(toolchain: Path, core: Path): CompiledLibrary = {
     src = path(fcktSays(["--std-path"]).trim())
     key = sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }.joinToString("\n").md5().take(16)
     folder = toolchain.resolve("std-$key")
-    unit = "Fckt_std"
+    unit = "fckt_std"
     if (!folder.resolve("done").exists()) {
       println("  compiling the standard library")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(core, []), [src], [src], packagesIn(src, src), unit, folder.resolve("fckt_std.ml"), folder.resolve("interface"))
+      compilePackages(Linking(core, []), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
       folder.resolve("done").writeText("")
     }
     CompiledLibrary(Coordinates("fckt", "std", fcktVersion()), folder, unit)
