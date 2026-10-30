@@ -40,7 +40,10 @@ module Dependencies {
   @Process internal publishedAt(lib: Coordinates): Path = repository().resolve(within(lib))
 
   // Where lib is: its folder in the first of repositories that has it.
-  @FileSystem @Process internal folderOf(lib: Coordinates, repositories: List<Repository>): Option<Path> =
+  @FileSystem @Process internal folderOf(
+    lib: Coordinates,
+    repositories: List<Repository>,
+  ): Option<Path> =
     repositories.map { folderIn(it).resolve(within(lib)) }.find { it.isDirectory() }
 
   // The folder a repository is.
@@ -52,7 +55,11 @@ module Dependencies {
   private within(lib: Coordinates): String = "${lib.group}/${lib.name}/${lib.version}"
 
   // The libraries asked for, with theirs, as the repositories say.
-  @FileSystem @Process libraries(wanted: List<Dependency>, found: List<Coordinates>, repositories: List<Repository>): List<Coordinates> = when (wanted) {
+  @FileSystem @Process libraries(
+    wanted: List<Dependency>,
+    found: List<Coordinates>,
+    repositories: List<Repository>,
+  ): List<Coordinates> = when (wanted) {
     [] -> found
     [Library(lib), *rest] ->
       if (found.contains(lib)) libraries(rest, found, repositories)
@@ -69,7 +76,10 @@ module Dependencies {
   }
 
   // What a published library depends on: its dependencies file, a library's coordinates a line.
-  @FileSystem @Process internal published(lib: Coordinates, repositories: List<Repository>): List<Dependency> = when (folderOf(lib, repositories)) {
+  @FileSystem @Process internal published(
+    lib: Coordinates,
+    repositories: List<Repository>,
+  ): List<Dependency> = when (folderOf(lib, repositories)) {
     Some(folder) -> {
       file = folder.resolve("dependencies")
       if (file.exists()) file.readLines().filter { !it.isBlank() }.map { library(it.trim()) } else []
@@ -83,7 +93,13 @@ module Dependencies {
       .distinct()
 
   // Whether version a comes after b: 1.10.0 after 1.9.2.
-  internal newer(a: String, b: String): Boolean = compareVersions(a.split(".").map { it.toIntOrNone().getOrElse(0) }, b.split(".").map { it.toIntOrNone().getOrElse(0) }) > 0
+  internal newer(
+    a: String,
+    b: String,
+  ): Boolean = compareVersions(
+    a.split(".").map { it.toIntOrNone().getOrElse(0) },
+    b.split(".").map { it.toIntOrNone().getOrElse(0) },
+  ) > 0
 
   private compareVersions(a: List<Int>, b: List<Int>): Int = when (a, b) {
     ([], []) -> 0

@@ -37,7 +37,13 @@ module Builds {
   // each, as Invocation's args, for run. The tasks are every project's, plugins', and tasks, the
   // script's own; project's libraries are looked for where settings, as written, say. With
   // --quiet, only what the tasks print is printed, for another program to read.
-  @Building runBuild(project: Project, args: List<String>, tasks: List<Task> = [], plugins: List<Plugin> = [], settings: Settings = Settings()): Unit = {
+  @Building runBuild(
+    project: Project,
+    args: List<String>,
+    tasks: List<Task> = [],
+    plugins: List<Plugin> = [],
+    settings: Settings = Settings(),
+  ): Unit = {
     given = args.takeWhile { it != "--" }
     quiet = given.contains("--quiet")
     names = given.filter { it != "--quiet" }
@@ -72,8 +78,12 @@ module Builds {
     made = plugins.flatMap { p -> p.tasks(project).map { (p.name(), it) } }.filter { _, t -> !mine.contains(t.name) }
     made.groupBy { _, t -> t.name.text }.forEach { name, makers ->
       by = makers.map { plugin, _ -> plugin }.joinToString(" and ")
-      if (makers.size > 1) fail("plugins $by both make a task $name: make it in tasks, to say which it is")
-      if (standardTasks.any { it.name.text == name }) fail("plugin $by makes a task $name, which every project has: make it in tasks, to say which it is")
+      if (makers.size > 1) fail(
+        "plugins $by both make a task $name: make it in tasks, to say which it is",
+      )
+      if (standardTasks.any { it.name.text == name }) fail(
+        "plugin $by makes a task $name, which every project has: make it in tasks, to say which it is",
+      )
     }
     standardTasks.filter { !mine.contains(it.name) } + made.map { _, t -> t } + own
   }
@@ -84,13 +94,20 @@ module Builds {
   }
 
   // The task the command line names.
-  @Fail private named(text: String, tasks: List<Task>): TaskName = when (tasks.find { it.name.text == text }) {
+  @Fail private named(
+    text: String,
+    tasks: List<Task>,
+  ): TaskName = when (tasks.find { it.name.text == text }) {
     Some(found) -> found.name
     None -> fail("there's no task '$text'; kiln tasks lists them")
   }
 
   // The tasks to run for names, in order: each after what it depends on, once.
-  @Fail private order(names: List<TaskName>, tasks: List<Task>, done: List<Task>): List<Task> = when (names) {
+  @Fail private order(
+    names: List<TaskName>,
+    tasks: List<Task>,
+    done: List<Task>,
+  ): List<Task> = when (names) {
     [] -> done
     [name, *rest] -> {
       task = when (tasks.find { it.name == name }) {

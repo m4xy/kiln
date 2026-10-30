@@ -43,4 +43,7 @@ fckt = "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.kiln.fckt.FcktTasks\n\nplu
 }
 
 // Fails, saying what was expected and what there was, unless text contains part.
-expectContains(text: String, part: String): Unit = if (!text.contains(part)) error("expected to find:\n$part\nin:\n$text")
+expectContains(
+  text: String,
+  part: String,
+): Unit = if (!text.contains(part)) error("expected to find:\n$part\nin:\n$text")

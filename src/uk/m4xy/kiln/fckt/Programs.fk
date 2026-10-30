@@ -78,10 +78,14 @@ module Programs {
     )
     if (layout.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
-      if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, sources, resolved.roots, layout.main, ml, program) }) println("  up to date")
+      if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, sources, resolved.roots, layout.main, ml, program) }) println(
+        "  up to date",
+      )
     } else {
       packages = sources.flatMap { Compiling.packagesIn(it, it) }.distinct()
-      if (packages.isEmpty()) fail("there's no ${layout.main.value}, and no packages in ${sources.map { it.value }.joinToString(", ")}")
+      if (packages.isEmpty()) fail(
+        "there's no ${layout.main.value}, and no packages in ${sources.map { it.value }.joinToString(", ")}",
+      )
       library = project.output.resolve("library")
       stamp = library.resolve("inputs")
       if (stamp.exists() && stamp.readText() == inputs) println("  up to date")
@@ -115,15 +119,21 @@ module Programs {
     groupPath = project.group.replace(".", "/")
     sources = layout.allSources()
     sources.flatMap { Compiling.packagesIn(it, it) }.forEach { p ->
-      if (p != project.group && !p.startsWith("${project.group}.")) fail("package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/")
+      if (p != project.group && !p.startsWith("${project.group}.")) fail(
+        "package $p isn't under ${project.group}, the group's, so it can't be published: move it to ${groupPath}/",
+      )
     }
     layout.sources.forEach { root ->
-      if (!root.resolve(groupPath).isDirectory()) fail("a library's packages go in a folder for its group, ${root.resolve(groupPath).value}")
+      if (!root.resolve(groupPath).isDirectory()) fail(
+        "a library's packages go in a folder for its group, ${root.resolve(groupPath).value}",
+      )
     }
     publish(project) { target ->
       // What its processors wrote is published as the rest of its code is.
       sources.filter { it.resolve(groupPath).isDirectory() }.forEach { root -> root.resolve(groupPath).copyRecursively(target.resolve("src").resolve(groupPath)) }
-      if (layout.ocamlPackages.isNotEmpty()) target.resolve(Compiling.packagesFile).writeText(layout.ocamlPackages.map { "$it\n" }.joinToString(""))
+      if (layout.ocamlPackages.isNotEmpty()) target.resolve(Compiling.packagesFile).writeText(
+        layout.ocamlPackages.map { "$it\n" }.joinToString(""),
+      )
     }
   }
 

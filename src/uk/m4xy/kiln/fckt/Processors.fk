@@ -13,7 +13,10 @@ import uk.m4xy.kiln.fckt.Sources.*
 // packages are then those in its sources, and in what each processor wrote.
 module Processors {
   // Runs each of the layout's processors, unless what it would be given and it are as they were.
-  @Building processAll(project: Project, layout: FcktLayout): Unit = layout.processors.forEach { process(project, layout, it) }
+  @Building processAll(
+    project: Project,
+    layout: FcktLayout,
+  ): Unit = layout.processors.forEach { process(project, layout, it) }
 
   @Building private process(project: Project, layout: FcktLayout, processor: Processor): Unit = {
     folder = project.output.resolve("processors").resolve(processor.moduleName)
@@ -26,13 +29,20 @@ module Processors {
     generated = layout.generatedBy(processor)
     stamp = folder.resolve("generated")
     inputs = Compiling.inputs(linking, layout.sources, []) + program.readBytes().md5()
-    if (stamp.exists() && stamp.readText() == inputs && generated.isDirectory()) println("  ${processor.moduleName}: up to date")
+    if (stamp.exists() && stamp.readText() == inputs && generated.isDirectory()) println(
+      "  ${processor.moduleName}: up to date",
+    )
     else {
       stamp.delete()
       symbols = folder.resolve("symbols")
       Compiling.runOrFail(
         Compiling.compiler(),
-        ["--symbols", symbols.value, "--no-std"] + Compiling.sourceArgs(layout.sources, roots) + Compiling.interfaces(linking.libraries),
+        ["--symbols", symbols.value, "--no-std"] + Compiling.sourceArgs(
+          layout.sources,
+          roots,
+        ) + Compiling.interfaces(
+          linking.libraries,
+        ),
       )
       Compiling.runOrFail(program.value, [symbols.value, generated.value])
       stamp.writeText(inputs)

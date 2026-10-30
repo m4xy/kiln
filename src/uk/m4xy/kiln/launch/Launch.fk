@@ -37,7 +37,9 @@ module Launch {
     exit(
       build(
         here,
-        if (folder == here || whole.projects.contains(here)) Some(FoundSettings(folder, whole)) else None,
+        if (folder == here || whole.projects.contains(here)) Some(
+          FoundSettings(folder, whole),
+        ) else None,
         args,
       ),
     )
@@ -45,7 +47,11 @@ module Launch {
 
   // Runs the tasks args names, in the projects the settings list, then on the project here, and
   // gives the exit code. Run --quiet, for another program to read, it's about this project only.
-  @Console @FileSystem @Process private build(here: Path, settings: Option<FoundSettings>, args: List<String>): Int = {
+  @Console @FileSystem @Process private build(
+    here: Path,
+    settings: Option<FoundSettings>,
+    args: List<String>,
+  ): Int = {
     names = args.takeWhile { it != "--" }
     included = when (settings) {
       Some(found) -> if (found.folder == here && !names.contains("--quiet")) found.settings.projects else []
@@ -66,7 +72,10 @@ module Launch {
 
   // The build script here, compiled with settings.fk beside it, if it applies, and what it says
   // build scripts use; run with args.
-  @Console @FileSystem @Process private script(settings: Option<FoundSettings>, args: List<String>): Int = {
+  @Console @FileSystem @Process private script(
+    settings: Option<FoundSettings>,
+    args: List<String>,
+  ): Int = {
     main = "main(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args, tasks, plugins, settings)\n"
     scripts = [path("build.fk")] + settings.map { [it.folder.resolve("settings.fk")] }.getOrElse([])
     uses = settings.map { PluginSources.of(it.settings.uses, it.settings.repositories) }.getOrElse([])

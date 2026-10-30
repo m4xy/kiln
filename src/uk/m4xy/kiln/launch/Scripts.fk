@@ -22,12 +22,20 @@ internal module Scripts {
   // with fckt, roots on its path, imports in each, and ocamlopt, unless they're as they were
   // compiled last: running the OCaml as a script would type-check all of it every time. Its exit
   // code; what fckt says is wrong is said of the scripts, where they are.
-  @Console @FileSystem @Process compile(main: String, scripts: List<Path>, cache: Path, roots: List<Path>, imports: List<String>): Int = {
+  @Console @FileSystem @Process compile(
+    main: String,
+    scripts: List<Path>,
+    cache: Path,
+    roots: List<Path>,
+    imports: List<String>,
+  ): Int = {
     src = cache.resolve("src")
     ml = cache.resolve("build.ml")
     built = cache.resolve("build")
     stamp = cache.resolve("stamp")
-    key = (["kiln $version", main] + scripts.map { "${it.value}\n${it.readText()}" } + roots.flatMap { sourcesIn(it) }.map { it.readText() } + imports).joinToString("\n")
+    key = (["kiln $version", main] + scripts.map { "${it.value}\n${it.readText()}" } + roots.flatMap { sourcesIn(it) }.map { it.readText() } + imports).joinToString(
+      "\n",
+    )
     if (built.exists() && stamp.exists() && stamp.readText() == key) 0
     else {
       stamp.delete()
@@ -39,11 +47,20 @@ internal module Scripts {
       // kiln's library and the plugins' are other projects: the script sees what they publish, not what's internal to them.
       exit = run(
         compiler(),
-        [src.resolve("main.fk").value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + imports.flatMap { ["--import", it] },
+        [
+          src.resolve("main.fk").value,
+          "-o",
+          ml.value,
+        ] + roots.flatMap { ["--other-project", it.value] } + imports.flatMap { ["--import", it] },
       )
       if (exit.code != 0) {
         print(
-          scripts.fold(exit.value.replace(src.resolve("main.fk").value, "the main kiln adds to ${scripts.firstOrNone().map { it.name }.getOrElse("the script")}")) { text, script -> text.replace(src.resolve(script.name).value, script.value) },
+          scripts.fold(
+            exit.value.replace(
+              src.resolve("main.fk").value,
+              "the main kiln adds to ${scripts.firstOrNone().map { it.name }.getOrElse("the script")}",
+            ),
+          ) { text, script -> text.replace(src.resolve(script.name).value, script.value) },
         )
         exit.code
       } else {

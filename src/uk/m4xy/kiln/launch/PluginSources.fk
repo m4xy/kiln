@@ -15,7 +15,10 @@ import uk.m4xy.kiln.Dependencies.published
 internal module PluginSources {
   // A library's source, from the first of repositories that has it, with the libraries it uses; a
   // project's src. kiln's library is always there.
-  @Console @FileSystem @Process of(uses: List<Dependency>, repositories: List<Repository>): List<Path> = uses.flatMap { used ->
+  @Console @FileSystem @Process of(
+    uses: List<Dependency>,
+    repositories: List<Repository>,
+  ): List<Path> = uses.flatMap { used ->
     when (used) {
       Folder(folder) -> [folder.resolve("src")]
       Library(lib) -> librarySources(lib, emptySet(), repositories)
@@ -23,7 +26,11 @@ internal module PluginSources {
     }
   }.distinct()
 
-  @Console @FileSystem @Process private librarySources(lib: Coordinates, seen: Set<Coordinates>, repositories: List<Repository>): List<Path> =
+  @Console @FileSystem @Process private librarySources(
+    lib: Coordinates,
+    seen: Set<Coordinates>,
+    repositories: List<Repository>,
+  ): List<Path> =
     if (seen.contains(lib)) []
     else when (folderOf(lib, repositories)) {
       Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->

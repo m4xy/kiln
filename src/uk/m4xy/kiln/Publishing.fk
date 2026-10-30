@@ -15,7 +15,9 @@ module Publishing {
     if (project.group.isEmpty()) fail("a library needs a group: Project(group = \"uk.m4xy\", ...)")
     project.dependencies.forEach { d ->
       when (d) {
-        Folder(folder) -> fail("a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library")
+        Folder(folder) -> fail(
+          "a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library",
+        )
         Library(_) -> Unit
         Kiln -> Unit
       }

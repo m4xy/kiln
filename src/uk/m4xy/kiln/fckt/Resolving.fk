@@ -37,9 +37,13 @@ module Resolving {
   // A project's folders and libraries, as its own build says: kiln -C folder --quiet roots, which
   // its fckt plugin's roots task prints as ResolvedText writes them.
   @FileSystem @Process private folderResolved(folder: Path): Resolved = {
-    if (!folder.resolve("build.fk").exists()) fail("${folder.value} has no build.fk, so it isn't a project")
+    if (!folder.resolve("build.fk").exists()) fail(
+      "${folder.value} has no build.fk, so it isn't a project",
+    )
     exit = run(env("KILN").getOrElse("kiln"), ["-C", folder.value, "--quiet", "roots"])
-    if (exit.code != 0) fail("couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}")
+    if (exit.code != 0) fail(
+      "couldn't read the project in ${folder.value}: ${exit.value.trim().removePrefix("BUILD FAILED: ")}",
+    )
     when (ResolvedText.read(exit.value)) {
       Ok(resolved) -> resolved.from(folder)
       Error(problem) -> fail("couldn't read the project in ${folder.value}: $problem")

@@ -63,7 +63,7 @@ tasks = [
     Named("lint"),
     "Looks at the code",
     partOf = [Check],
-    action = build -> if (build.args.contains("strict")) fail("too loose") else println("  looks fine"),
+    action = b -> if (b.args.contains("strict")) fail("too loose") else println("  looks fine"),
   ),
 ]
 """)
@@ -167,7 +167,7 @@ tasks = [Task(Named("greet"), "Waves", action = build -> println("  *waves*"))]
   write(
     dir,
     "greeting/build.fk",
-    fckt + "project = Project(name = \"greeting\", group = \"uk.m4xy\", version = \"1.0.0\", dependencies = [kiln()])\n",
+    fckt + "project = Project(\n  name = \"greeting\",\n  group = \"uk.m4xy\",\n  version = \"1.0.0\",\n  dependencies = [kiln()],\n)\n",
   )
   write(dir, "greeting/src/uk/m4xy/greeting/Words.fk", "spec Words {\n  greeting(): String\n}\n")
   write(
@@ -180,7 +180,13 @@ import uk.m4xy.kiln.*
 
 module Greetings(W: Words = Hello) : Plugin {
   name(): String = "greetings"
-  tasks(project: Project): List<Task> = [Task(Named("greet"), "Greets the project", action = build -> println("  " + W.greeting() + ", " + build.project.name))]
+  tasks(project: Project): List<Task> = [
+    Task(
+      Named("greet"),
+      "Greets the project",
+      action = build -> println("  " + W.greeting() + ", " + build.project.name),
+    ),
+  ]
 }
 """)
   write(dir, "greeting/src/uk/m4xy/greeting/Cleaning.fk", """import uk.m4xy.kiln.*
@@ -238,7 +244,9 @@ module Cleaning : Plugin {
   write(dir, "words/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"local\"\n}\n")
   assertEquals(0, kiln(dir.resolve("words"), ["publishLocal"]).code)
   // The team's repository has another words 1.0.0.
-  path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(dir.resolve("team/uk.m4xy/words/1.0.0"))
+  path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(
+    dir.resolve("team/uk.m4xy/words/1.0.0"),
+  )
   write(
     dir,
     "team/uk.m4xy/words/1.0.0/src/uk/m4xy/words/Words.fk",
@@ -254,7 +262,11 @@ module Cleaning : Plugin {
     "shop/src/main.fk",
     "import fckt.io.Console\nimport uk.m4xy.words.Words\n\nmain() = println(Words.word)\n",
   )
-  order = (repositories: String) -> write(dir, "shop/settings.fk", "settings = Settings(repositories = [$repositories])\n")
+  order = (repositories: String) -> write(
+    dir,
+    "shop/settings.fk",
+    "settings = Settings(repositories = [$repositories])\n",
+  )
   order("At(path(\"../team\")), Local")
   expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nteam\n")
   order("Local, At(path(\"../team\"))")

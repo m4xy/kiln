@@ -50,7 +50,9 @@ import uk.m4xy.kiln.fckt.Resolving.*
   )
   assertEquals(
     Resolved([path("/work/shop/src"), path("/shared/src")], [], [At(path("/work/team"))], true),
-    Resolved([path("src"), path("/shared/src")], [], [At(path("../team"))], true).from(path("/work/shop")),
+    Resolved([path("src"), path("/shared/src")], [], [At(path("../team"))], true).from(
+      path("/work/shop"),
+    ),
   )
 }
 

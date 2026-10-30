@@ -119,7 +119,10 @@ import uk.m4xy.fktests.api.Test
     "pricing/build.fk",
     fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n",
   )
-  roots = kiln(dir.resolve("pricing"), ["--quiet", "roots"]).value.lines().filter { it.isNotBlank() }
+  roots = kiln(
+    dir.resolve("pricing"),
+    ["--quiet", "roots"],
+  ).value.lines().filter { it.isNotBlank() }
   assertEquals(
     ["root src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0", "repository local"],
     roots,
