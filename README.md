@@ -127,6 +127,8 @@ project has fckt's standard library, `fckt:std`, the one beside the fckt it's bu
 | `run` | Runs the program, with what follows `--`; it failing fails the build |
 | `publishLocal` | Checks the project, then publishes its packages, under its group's folder, as a library to the local repository |
 | `roots` | Prints the folders the project's packages, and its folder projects', are in, the libraries it uses, and its repositories: `root src`, `library uk.m4xy:json:1.2.0`, and any OCaml packages, `ocaml-package ssl`, a line each, as `ResolvedText` writes and reads them; another project that depends on it asks for them, `kiln --quiet roots` |
+| `format` | Lays out the project's code, `src`, `test`, `build.fk` and `settings.fk`, as `fckt --format` does: a list too wide for its line, at 100 columns, goes an item to a line |
+| `checkFormat` | Part of `check`: fails, saying where, if the project's code isn't laid out as `format` lays it out |
 
 A project laid out otherwise says so with a module that follows `FcktConfiguration`, whose
 `layout()` is a `FcktLayout(main, sources, standardLibrary, ocamlPackages)`, as fckt's standard library does, which
