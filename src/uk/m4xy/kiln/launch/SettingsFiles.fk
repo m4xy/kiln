@@ -22,7 +22,7 @@ internal module SettingsFiles {
   @Console @FileSystem @Process run(folder: Path, args: List<String>): Int = {
     cache = folder.resolve(".kiln/settings")
     main = "main(args: List<String>) = uk.m4xy.kiln.launch.Launch.withSettings(settings, args)\n"
-    if (Scripts.compile(main, [folder.resolve("settings.fk")], cache, [Scripts.library()], Scripts.imports) != 0) 1
+    if (Scripts.compile(main, [folder.resolve("settings.fk")], cache, [], Scripts.imports) != 0) 1
     else {
       setEnv("KILN_SETTINGS", folder.value)
       runAttached(cache.resolve("build").value, args)
