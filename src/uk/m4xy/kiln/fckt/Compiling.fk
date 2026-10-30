@@ -243,7 +243,8 @@ module Compiling {
       if (!moved(at.value, folder.value)) at.delete()
     }
 
-  private external moved(
+  // Whether from was moved to to, which it replaces, if it's a file, or an empty folder.
+  internal external moved(
     from: String,
     to: String,
   ): Boolean = "(fun a b -> try Sys.rename a b; true with Sys_error _ -> false) from to"

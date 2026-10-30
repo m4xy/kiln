@@ -37,8 +37,6 @@ internal module Scripts {
     roots: List<Path>,
     imports: List<String>,
   ): Int = {
-    src = cache.resolve("src")
-    ml = cache.resolve("build.ml")
     built = cache.resolve("build")
     stamp = cache.resolve("stamp")
     key = (["kiln $version", main] + scripts.map { "${it.value}\n${it.readText()}" } + ([library()] + roots).flatMap { sourcesIn(it) }.map { it.readText() } + imports).joinToString(
@@ -46,9 +44,16 @@ internal module Scripts {
     )
     if (built.exists() && stamp.exists() && stamp.readText() == key) 0
     else {
-      stamp.delete()
+      // Made in a folder of its own, so kiln compiling it more than once at a time, as kiln run
+      // twice in a project, or in projects that share settings.fk, does, never sees another half
+      // done; then moved into place.
+      cache.makeDirs()
+      work = path(
+        Compiling.output("mktemp", ["-d", cache.resolve("compiling.XXXXXX").value]).trim(),
+      )
+      src = work.resolve("src")
+      ml = work.resolve("build.ml")
       // Only these, as every file beside main is the program's.
-      src.delete()
       src.makeDirs()
       src.resolve("main.fk").writeText(main)
       scripts.forEach { it.copyTo(src.resolve(it.name)) }
@@ -74,23 +79,27 @@ internal module Scripts {
             ),
           ) { text, script -> text.replace(src.resolve(script.name).value, script.value) },
         )
+        work.delete()
         exit.code
       } else {
-        native = run("ocamlopt", linked(linking, ml, built))
-        if (native.code == 0) stamp.writeText(key) else print(native.value)
+        native = run("ocamlopt", linked(linking, ml, work.resolve("build")))
+        if (native.code == 0) {
+          work.resolve("stamp").writeText(key)
+          Compiling.moved(work.resolve("build").value, built.value)
+          Compiling.moved(work.resolve("stamp").value, stamp.value)
+          Unit
+        } else print(native.value)
+        work.delete()
         native.code
       }
     }
   }
 
-  // linking, with kiln's library, compiled once for its source.
+  // linking, with kiln's library, compiled once for its source and the libraries it's compiled with.
   @Building private withKiln(linking: Linking): Linking = {
     src = library()
-    key = sourcesIn(
-      src,
-    ).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" }.joinToString(
-      "\n",
-    ).md5().take(16)
+    key = (sourcesIn(src).map { "${it.relativeTo(src).getOrElse(it).value}\n${it.readText()}" } +
+      linking.libraries.map { it.folder.name }).joinToString("\n").md5().take(16)
     folder = linking.core.resolve("../kiln-$key")
     unit = "uk_m4xy_kiln"
     Compiling.made(folder) { at ->
