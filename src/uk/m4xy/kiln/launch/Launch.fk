@@ -83,7 +83,7 @@ module Launch {
       main,
       scripts,
       path(".kiln"),
-      [Scripts.library()] + uses,
+      uses,
       Scripts.imports + ["uk.m4xy.kiln.defaults.*"],
     )
     if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
