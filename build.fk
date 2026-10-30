@@ -19,7 +19,12 @@ plugins = [Fckt(), FkTests(KilnTests)]
 install = Named("install")
 
 tasks = [
-  Task(install, "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln", dependsOn = [FcktTasks.compile], action = installKiln),
+  Task(
+    install,
+    "Installs kiln to ~/.kiln, or KILN_HOME: bin/kiln, and its library in lib/kiln",
+    dependsOn = [FcktTasks.compile],
+    action = installKiln,
+  ),
 ]
 
 // The program to bin, and uk.m4xy.kiln's source to lib/kiln, where the program looks for it.
@@ -30,5 +35,7 @@ tasks = [
   library = home.resolve("lib/kiln")
   library.delete()
   path("src/uk").copyRecursively(library.resolve("uk"))
-  println("  installed ${home.resolve("bin/kiln").value}; ${home.resolve("bin").value} goes on PATH")
+  println(
+    "  installed ${home.resolve("bin/kiln").value}; ${home.resolve("bin").value} goes on PATH",
+  )
 }

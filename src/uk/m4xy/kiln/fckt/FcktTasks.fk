@@ -8,4 +8,6 @@ module FcktTasks {
   run: TaskName = Named("run")
   publishLocal: TaskName = Named("publishLocal")
   roots: TaskName = Named("roots")
+  format: TaskName = Named("format")
+  checkFormat: TaskName = Named("checkFormat")
 }

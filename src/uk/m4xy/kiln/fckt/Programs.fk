@@ -17,13 +17,52 @@ import uk.m4xy.kiln.fckt.Sources.*
 module Programs {
   // The plugin's tasks, for a project laid out as layout says: process, only if it has processors.
   tasks(layout: FcktLayout): List<Task> = (if (layout.processors.isEmpty()) [] else [
-    Task(FcktTasks.process, "Writes code from what the project declares, with its processors", action = build -> Processors.processAll(build.project, layout)),
+    Task(
+      FcktTasks.process,
+      "Writes code from what the project declares, with its processors",
+      action = build -> Processors.processAll(build.project, layout),
+    ),
   ]) + [
-    Task(FcktTasks.compile, "Compiles the program to output/bin, or a library, which has no main, to output/library", dependsOn = if (layout.processors.isEmpty()) [] else [FcktTasks.process], partOf = [Check], action = build -> compile(build.project, layout)),
-    Task(FcktTasks.run, "Runs the program, with what follows --", dependsOn = [FcktTasks.compile], action = build -> runProgram(build)),
-    Task(FcktTasks.publishLocal, "Checks it, then publishes it as a library to ~/.kiln/repository", dependsOn = [Check], action = build -> publishLocal(build.project, layout)),
-    Task(FcktTasks.roots, "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories", action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout)))),
+    Task(
+      FcktTasks.compile,
+      "Compiles the program to output/bin, or a library, which has no main, to output/library",
+      dependsOn = if (layout.processors.isEmpty()) [] else [FcktTasks.process],
+      partOf = [Check],
+      action = build -> compile(build.project, layout),
+    ),
+    Task(
+      FcktTasks.run,
+      "Runs the program, with what follows --",
+      dependsOn = [FcktTasks.compile],
+      action = build -> runProgram(build),
+    ),
+    Task(
+      FcktTasks.publishLocal,
+      "Checks it, then publishes it as a library to ~/.kiln/repository",
+      dependsOn = [Check],
+      action = build -> publishLocal(build.project, layout),
+    ),
+    Task(
+      FcktTasks.roots,
+      "Prints the folders its packages and its folder projects' are in, the libraries it uses, and its repositories",
+      action = build -> println(ResolvedText.of(Resolving.resolve(build.project, layout))),
+    ),
+    Task(
+      FcktTasks.format,
+      "Lays out its code: a list too wide for its line goes an item to a line",
+      action = _ -> Compiling.runOrFail(Compiling.compiler(), ["--format"] + laidOut(layout)),
+    ),
+    Task(
+      FcktTasks.checkFormat,
+      "Checks its code is laid out as format lays it out",
+      partOf = [Check],
+      action = _ -> Compiling.runOrFail(Compiling.compiler(), ["--check-format"] + laidOut(layout)),
+    ),
   ]
+
+  // What's laid out: its sources, its tests, and its build script and settings.
+  @FileSystem private laidOut(layout: FcktLayout): List<String> =
+    (layout.sources + [path("test"), path("build.fk"), path("settings.fk")]).filter { it.exists() }.map { it.value }.distinct()
 
   // A library has no main: its packages are compiled as a library is, which checks all of them and
   // that what it shows says its types; to output/library, its interface and its OCaml.
@@ -32,7 +71,11 @@ module Programs {
     resolved = Resolving.resolve(project, layout)
     linking = Compiling.linking(resolved)
     remember(resolved, linking)
-    inputs = Compiling.inputs(linking, resolved.roots, if (layout.main.exists()) [layout.main] else [])
+    inputs = Compiling.inputs(
+      linking,
+      resolved.roots,
+      if (layout.main.exists()) [layout.main] else [],
+    )
     if (layout.main.exists()) {
       program = project.output.resolve("bin").resolve(project.name)
       if (!Compiling.buildProgram(project.output, program, inputs) { ml -> Compiling.compileProgram(linking, sources, resolved.roots, layout.main, ml, program) }) println("  up to date")
@@ -45,10 +88,23 @@ module Programs {
       else {
         library.delete()
         library.makeDirs()
-        unit = Compiling.unitOf(if (project.group.isEmpty()) "project" else project.group, project.name)
-        Compiling.compilePackages(linking, sources, resolved.roots, packages, unit, library.resolve("$unit.ml"), library.resolve("interface"))
+        unit = Compiling.unitOf(
+          if (project.group.isEmpty()) "project" else project.group,
+          project.name,
+        )
+        Compiling.compilePackages(
+          linking,
+          sources,
+          resolved.roots,
+          packages,
+          unit,
+          library.resolve("$unit.ml"),
+          library.resolve("interface"),
+        )
         stamp.writeText(inputs)
-        println("  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}")
+        println(
+          "  checked ${packages.size} package${if (packages.size == 1) "" else "s"}: ${packages.joinToString(", ")}",
+        )
       }
     }
   }

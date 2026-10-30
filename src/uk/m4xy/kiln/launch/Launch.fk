@@ -34,7 +34,13 @@ module Launch {
     folder = path(env("KILN_SETTINGS").getOrElse("."))
     here = workingDirectory()
     whole = settings.from(folder)
-    exit(build(here, if (folder == here || whole.projects.contains(here)) Some(FoundSettings(folder, whole)) else None, args))
+    exit(
+      build(
+        here,
+        if (folder == here || whole.projects.contains(here)) Some(FoundSettings(folder, whole)) else None,
+        args,
+      ),
+    )
   }
 
   // Runs the tasks args names, in the projects the settings list, then on the project here, and
@@ -64,7 +70,13 @@ module Launch {
     main = "main(args: List<String>) = uk.m4xy.kiln.Builds.runBuild(project, args, tasks, plugins, settings)\n"
     scripts = [path("build.fk")] + settings.map { [it.folder.resolve("settings.fk")] }.getOrElse([])
     uses = settings.map { PluginSources.of(it.settings.uses, it.settings.repositories) }.getOrElse([])
-    code = Scripts.compile(main, scripts, path(".kiln"), [Scripts.library()] + uses, Scripts.imports + ["uk.m4xy.kiln.defaults.*"])
+    code = Scripts.compile(
+      main,
+      scripts,
+      path(".kiln"),
+      [Scripts.library()] + uses,
+      Scripts.imports + ["uk.m4xy.kiln.defaults.*"],
+    )
     if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
   }
 }

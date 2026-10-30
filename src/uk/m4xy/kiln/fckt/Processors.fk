@@ -30,10 +30,15 @@ module Processors {
     else {
       stamp.delete()
       symbols = folder.resolve("symbols")
-      Compiling.runOrFail(Compiling.compiler(), ["--symbols", symbols.value, "--no-std"] + Compiling.sourceArgs(layout.sources, roots) + Compiling.interfaces(linking.libraries))
+      Compiling.runOrFail(
+        Compiling.compiler(),
+        ["--symbols", symbols.value, "--no-std"] + Compiling.sourceArgs(layout.sources, roots) + Compiling.interfaces(linking.libraries),
+      )
       Compiling.runOrFail(program.value, [symbols.value, generated.value])
       stamp.writeText(inputs)
-      println("  ${processor.moduleName}: wrote ${filesIn(generated).size} file${if (filesIn(generated).size == 1) "" else "s"}")
+      println(
+        "  ${processor.moduleName}: wrote ${filesIn(generated).size} file${if (filesIn(generated).size == 1) "" else "s"}",
+      )
     }
   }
 

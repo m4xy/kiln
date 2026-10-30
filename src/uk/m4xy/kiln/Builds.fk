@@ -19,9 +19,18 @@ module Builds {
   internal standardTasks: List<Task> = StandardTask.values.map { standard(it) }
 
   private standard(task: StandardTask): Task = when (task) {
-    Clean -> Task(Clean, "Deletes what's been built", action = build -> build.project.output.delete())
+    Clean -> Task(
+      Clean,
+      "Deletes what's been built",
+      action = build -> build.project.output.delete(),
+    )
     Check -> Task(Check, "Checks the project: runs the tasks part of it", action = build -> Unit)
-    Build -> Task(Build, "Checks the project, and runs the tasks part of it", dependsOn = [Check], action = build -> Unit)
+    Build -> Task(
+      Build,
+      "Checks the project, and runs the tasks part of it",
+      dependsOn = [Check],
+      action = build -> Unit,
+    )
   }
 
   // Runs the tasks args name, each after those it depends on, and once; what follows -- goes to
@@ -32,7 +41,10 @@ module Builds {
     given = args.takeWhile { it != "--" }
     quiet = given.contains("--quiet")
     names = given.filter { it != "--quiet" }
-    build = Invocation(project.copy(repositories = settings.from(settingsFolder()).repositories), args.dropWhile { it != "--" }.drop(1))
+    build = Invocation(
+      project.copy(repositories = settings.from(settingsFolder()).repositories),
+      args.dropWhile { it != "--" }.drop(1),
+    )
     result = attempt {
       tasks = tasksOf(build.project, tasks, plugins)
       if (names.isEmpty() || names.contains("tasks")) listTasks(build.project, tasks)
@@ -84,7 +96,9 @@ module Builds {
       task = when (tasks.find { it.name == name }) {
         Some(found) -> found
         // Named in a script or plugin, but made by none this build has.
-        None -> fail("there's no task '${name.text}', which a task depends on or is part of: is the plugin that makes it applied?")
+        None -> fail(
+          "there's no task '${name.text}', which a task depends on or is part of: is the plugin that makes it applied?",
+        )
       }
       // What it depends on, and the tasks part of it.
       needs = task.dependsOn + tasks.filter { it.partOf.contains(task.name) }.map { it.name }

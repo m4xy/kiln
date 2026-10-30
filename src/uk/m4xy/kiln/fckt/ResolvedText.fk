@@ -28,7 +28,9 @@ internal module ResolvedText : Format {
       "library" -> CoordinatesText.read(rest).map { resolved.copy(libraries = resolved.libraries + [it]) }
       "repository" -> RepositoryText.read(rest).map { resolved.copy(repositories = resolved.repositories + [it]) }
       "ocaml-package" -> Ok(resolved.copy(ocamlPackages = resolved.ocamlPackages + [rest]))
-      else -> Error("kiln roots said '$line', which is none of a root, a library, a repository or an OCaml package")
+      else -> Error(
+        "kiln roots said '$line', which is none of a root, a library, a repository or an OCaml package",
+      )
     }
   }
 }

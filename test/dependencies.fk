@@ -9,42 +9,96 @@ import uk.m4xy.fktests.api.Test
   dir = projects("dependencies")
   path("build/test-repository").delete()
   path("build/test-cache").delete()
-  write(dir, "units/build.fk", fckt + "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.0.0\")\n")
-  write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100\n}\n")
-  write(dir, "money/build.fk", fckt + "project = Project(name = \"money\", group = \"uk.m4xy\", version = \"2.1.0\", dependencies = [library(\"uk.m4xy:units:1.0.0\")])\n")
-  write(dir, "money/src/uk/m4xy/money/Money.fk", "import uk.m4xy.units.Cents\n\nmodule Money {\n  format(pounds: Int): String = \"\${Cents.of(pounds)}p\"\n}\n")
-  write(dir, "pricing/build.fk", fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\")])\n")
-  write(dir, "pricing/src/pricing/Prices.fk", "import uk.m4xy.money.Money\n\nmodule Prices {\n  label(pounds: Int): String = \"costs \${Money.format(pounds)}\"\n}\n")
-  write(dir, "shop/build.fk", fckt + "project = Project(name = \"shop\", dependencies = [projectAt(\"../pricing\")])\n")
-  write(dir, "shop/src/main.fk", "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(3))\n")
+  write(
+    dir,
+    "units/build.fk",
+    fckt + "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.0.0\")\n",
+  )
+  write(
+    dir,
+    "units/src/uk/m4xy/units/Cents.fk",
+    "module Cents {\n  of(pounds: Int): Int = pounds * 100\n}\n",
+  )
+  write(
+    dir,
+    "money/build.fk",
+    fckt + "project = Project(\n  name = \"money\",\n  group = \"uk.m4xy\",\n  version = \"2.1.0\",\n  dependencies = [library(\"uk.m4xy:units:1.0.0\")],\n)\n",
+  )
+  write(
+    dir,
+    "money/src/uk/m4xy/money/Money.fk",
+    "import uk.m4xy.units.Cents\n\nmodule Money {\n  format(pounds: Int): String = \"\${Cents.of(pounds)}p\"\n}\n",
+  )
+  write(
+    dir,
+    "pricing/build.fk",
+    fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\")])\n",
+  )
+  write(
+    dir,
+    "pricing/src/pricing/Prices.fk",
+    "import uk.m4xy.money.Money\n\nmodule Prices {\n  label(pounds: Int): String = \"costs \${Money.format(pounds)}\"\n}\n",
+  )
+  write(
+    dir,
+    "shop/build.fk",
+    fckt + "project = Project(name = \"shop\", dependencies = [projectAt(\"../pricing\")])\n",
+  )
+  write(
+    dir,
+    "shop/src/main.fk",
+    "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(3))\n",
+  )
   units = dir.resolve("units")
   money = dir.resolve("money")
   // Nothing's published yet.
   expectContains(kiln(dir.resolve("shop"), ["run"]).value, "there's no uk.m4xy:money:2.1.0 in")
   // A library is compiled, checked and copied: only what's under its group.
-  expectContains(kiln(units, ["publishLocal"]).value, "> Task :check\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0")
+  expectContains(
+    kiln(units, ["publishLocal"]).value,
+    "> Task :check\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0",
+  )
   assertEquals(0, kiln(money, ["publishLocal"]).code)
   // publishLocal compiled it, so it's up to date.
   expectContains(kiln(money, ["compile"]).value, "> Task :compile\n  up to date\n")
   repository = path("build/test-repository")
-  assertEquals("uk.m4xy:units:1.0.0\n", repository.resolve("uk.m4xy/money/2.1.0/dependencies").readText())
+  assertEquals(
+    "uk.m4xy:units:1.0.0\n",
+    repository.resolve("uk.m4xy/money/2.1.0/dependencies").readText(),
+  )
   assert(repository.resolve("uk.m4xy/money/2.1.0/src/uk/m4xy/money/Money.fk").exists())
   // The project from its folder, with the libraries it uses and theirs, each compiled once:
   // money's units was, when money was.
-  assertEquals("> Task :compile\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
-  assertEquals("> Task :compile\n  up to date\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n", kiln(dir.resolve("shop"), ["run"]).value)
+  assertEquals(
+    "> Task :compile\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n",
+    kiln(dir.resolve("shop"), ["run"]).value,
+  )
+  assertEquals(
+    "> Task :compile\n  up to date\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n",
+    kiln(dir.resolve("shop"), ["run"]).value,
+  )
   // Where editors find its packages and libraries.
   paths = dir.resolve("shop/.kiln/paths").readLines()
   assertEquals(["source src", "source ../pricing/src"], paths.filter { it.startsWith("source ") })
   // The standard library's interface, and units' and money's.
   assertEquals(3, paths.filter { it.startsWith("library ") && it.endsWith("/interface") }.size)
   // Published again, it's compiled again.
-  write(dir, "units/src/uk/m4xy/units/Cents.fk", "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n")
+  write(
+    dir,
+    "units/src/uk/m4xy/units/Cents.fk",
+    "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n",
+  )
   assertEquals(0, kiln(units, ["publishLocal"]).code)
-  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "  compiling uk.m4xy:units:1.0.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p")
+  expectContains(
+    kiln(dir.resolve("shop"), ["run"]).value,
+    "  compiling uk.m4xy:units:1.0.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p",
+  )
   // What a library shows says its types, as programs are checked against them without its code.
   write(dir, "money/src/uk/m4xy/money/Loose.fk", "module Loose {\n  twice(x: Int) = x * 2\n}\n")
-  expectContains(kiln(money, ["compile"]).value, "'twice' is in a library's interface, which programs are checked against, so it needs a result type")
+  expectContains(
+    kiln(money, ["compile"]).value,
+    "'twice' is in a library's interface, which programs are checked against, so it needs a result type",
+  )
   money.resolve("src/uk/m4xy/money/Loose.fk").delete()
   // A library that doesn't check, or has packages outside its group, isn't published.
   write(dir, "money/src/uk/m4xy/money/Broken.fk", "module Broken { f(): Int = \"x\" }\n")
@@ -54,12 +108,30 @@ import uk.m4xy.fktests.api.Test
   expectContains(kiln(money, ["publishLocal"]).value, "package helpers isn't under uk.m4xy")
   money.resolve("src/helpers").delete()
   // Of two versions asked for, the higher.
-  write(dir, "units/build.fk", fckt + "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.10.0\")\n")
+  write(
+    dir,
+    "units/build.fk",
+    fckt + "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.10.0\")\n",
+  )
   assertEquals(0, kiln(units, ["publishLocal"]).code)
-  write(dir, "pricing/build.fk", fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n")
+  write(
+    dir,
+    "pricing/build.fk",
+    fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n",
+  )
   roots = kiln(dir.resolve("pricing"), ["--quiet", "roots"]).value.lines().filter { it.isNotBlank() }
-  assertEquals(["root src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0", "repository local"], roots)
+  assertEquals(
+    ["root src", "library uk.m4xy:money:2.1.0", "library uk.m4xy:units:1.10.0", "repository local"],
+    roots,
+  )
   // money, compiled with units 1.10.0 now.
-  write(dir, "pricing/src/main.fk", "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(4))\n")
-  expectContains(kiln(dir.resolve("pricing"), ["run"]).value, "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p")
+  write(
+    dir,
+    "pricing/src/main.fk",
+    "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(4))\n",
+  )
+  expectContains(
+    kiln(dir.resolve("pricing"), ["run"]).value,
+    "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p",
+  )
 }

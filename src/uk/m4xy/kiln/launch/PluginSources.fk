@@ -33,7 +33,9 @@ internal module PluginSources {
         }
       }
       None -> {
-        println("settings.fk: it uses ${CoordinatesText.of(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
+        println(
+          "settings.fk: it uses ${CoordinatesText.of(lib)}, which isn't in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project",
+        )
         exit(1)
       }
     }

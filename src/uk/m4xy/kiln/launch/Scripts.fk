@@ -37,12 +37,20 @@ internal module Scripts {
       src.resolve("main.fk").writeText(main)
       scripts.forEach { it.copyTo(src.resolve(it.name)) }
       // kiln's library and the plugins' are other projects: the script sees what they publish, not what's internal to them.
-      exit = run(compiler(), [src.resolve("main.fk").value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + imports.flatMap { ["--import", it] })
+      exit = run(
+        compiler(),
+        [src.resolve("main.fk").value, "-o", ml.value] + roots.flatMap { ["--other-project", it.value] } + imports.flatMap { ["--import", it] },
+      )
       if (exit.code != 0) {
-        print(scripts.fold(exit.value.replace(src.resolve("main.fk").value, "the main kiln adds to ${scripts.firstOrNone().map { it.name }.getOrElse("the script")}")) { text, script -> text.replace(src.resolve(script.name).value, script.value) })
+        print(
+          scripts.fold(exit.value.replace(src.resolve("main.fk").value, "the main kiln adds to ${scripts.firstOrNone().map { it.name }.getOrElse("the script")}")) { text, script -> text.replace(src.resolve(script.name).value, script.value) },
+        )
         exit.code
       } else {
-        native = run("ocamlopt", ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value])
+        native = run(
+          "ocamlopt",
+          ["-w", "-a", "-I", "+unix", "unix.cmxa", ml.value, "-o", built.value],
+        )
         if (native.code == 0) stamp.writeText(key) else print(native.value)
         native.code
       }

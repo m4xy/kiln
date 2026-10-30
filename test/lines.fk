@@ -8,7 +8,15 @@ import uk.m4xy.kiln.fckt.Resolving.*
 
 // Each format reads back what it writes: all of it, with folders as they were written.
 @Test whatAProjectIsBuiltFromIsReadBack() = {
-  assertReadsBack(ResolvedText, Resolved([path("src"), path("/shared/src")], [Coordinates("uk.m4xy", "json", "1.2.0")], [At(path("../team")), Local], false))
+  assertReadsBack(
+    ResolvedText,
+    Resolved(
+      [path("src"), path("/shared/src")],
+      [Coordinates("uk.m4xy", "json", "1.2.0")],
+      [At(path("../team")), Local],
+      false,
+    ),
+  )
   assertReadsBack(ResolvedText, Resolved([path("src")], [], [Local], true, ["ssl", "yojson"]))
 }
 
@@ -21,13 +29,21 @@ import uk.m4xy.kiln.fckt.Resolving.*
 @Test foldersAreMadeWholeFromWhereTheyWereWritten() = {
   settings = Settings(
     repositories = [At(path("team")), Local],
-    uses = [Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")), Folder(path("../plugin")), Kiln],
+    uses = [
+      Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")),
+      Folder(path("../plugin")),
+      Kiln,
+    ],
     projects = [path("runner"), path("/elsewhere/kiln")],
   )
   assertEquals(
     Settings(
       repositories = [At(path("/work/team")), Local],
-      uses = [Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")), Folder(path("/plugin")), Kiln],
+      uses = [
+        Library(Coordinates("uk.m4xy", "fk-tests-kiln", "0.1.0")),
+        Folder(path("/plugin")),
+        Kiln,
+      ],
       projects = [path("/work/runner"), path("/elsewhere/kiln")],
     ),
     settings.from(path("/work")),
@@ -40,8 +56,19 @@ import uk.m4xy.kiln.fckt.Resolving.*
 
 // What isn't in a format says so, rather than being passed over.
 @Test whatIsntInAFormatSaysSo() = {
-  assertEquals(Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"), CoordinatesText.read("json"))
-  assertEquals(Error("a repository is local or at a folder, not remote"), RepositoryText.read("remote"))
+  assertEquals(
+    Error("a library is group:name:version, as uk.m4xy:json:1.2.0, not json"),
+    CoordinatesText.read("json"),
+  )
+  assertEquals(
+    Error("a repository is local or at a folder, not remote"),
+    RepositoryText.read("remote"),
+  )
   // Anything else kiln roots says isn't taken for a folder.
-  assertEquals(Error("kiln roots said 'compiling json', which is none of a root, a library, a repository or an OCaml package"), ResolvedText.read("root src\ncompiling json"))
+  assertEquals(
+    Error(
+      "kiln roots said 'compiling json', which is none of a root, a library, a repository or an OCaml package",
+    ),
+    ResolvedText.read("root src\ncompiling json"),
+  )
 }

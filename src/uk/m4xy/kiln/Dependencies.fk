@@ -24,7 +24,9 @@ module Dependencies {
   // Where kiln's library is: KILN_LIB, which kiln sets for a build script.
   @Process internal kilnLibrary(): Path = when (env("KILN_LIB")) {
     Some(folder) -> path(folder)
-    None -> fail("KILN_LIB doesn't say where kiln's library is; kiln sets it when it runs a build script")
+    None -> fail(
+      "KILN_LIB doesn't say where kiln's library is; kiln sets it when it runs a build script",
+    )
   }
 
 
@@ -56,7 +58,9 @@ module Dependencies {
       if (found.contains(lib)) libraries(rest, found, repositories)
       else {
         if (folderOf(lib, repositories).isNone()) {
-          fail("there's no ${CoordinatesText.of(lib)} in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project")
+          fail(
+            "there's no ${CoordinatesText.of(lib)} in ${repositories.map { folderIn(it).value }.joinToString(" or ")}: run kiln publishLocal in its project",
+          )
         }
         libraries(rest + published(lib, repositories), found + [lib], repositories)
       }

@@ -25,7 +25,9 @@ module Resolving {
     }
     Resolved(
       (layout.allSources() + found.flatMap { it.roots } + if (project.dependencies.contains(Kiln)) [kilnLibrary()] else []).distinct(),
-      chosen(libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries }),
+      chosen(
+        libraries(project.dependencies, [], project.repositories) + found.flatMap { it.libraries },
+      ),
       project.repositories,
       layout.standardLibrary,
       (layout.ocamlPackages + found.flatMap { it.ocamlPackages }).distinct(),

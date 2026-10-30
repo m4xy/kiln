@@ -63,7 +63,11 @@ module Compiling {
     core = coreOf(toolchain)
     std = if (resolved.standardLibrary) [standardLibrary(toolchain, core)] else []
     libraries = resolved.libraries.fold(std) { done, lib -> compileLibrary(toolchain, core, std, resolved.libraries, lib, [], done, resolved.repositories) }
-    Linking(core, libraries, (resolved.ocamlPackages + libraries.flatMap { it.ocamlPackages }).distinct())
+    Linking(
+      core,
+      libraries,
+      (resolved.ocamlPackages + libraries.flatMap { it.ocamlPackages }).distinct(),
+    )
   }
 
   // What fckt --version says.
@@ -97,7 +101,10 @@ module Compiling {
   // a program.
   @Building internal compileProgram(linking: Linking, own: List<Path>, roots: List<Path>, file: Path, ml: Path, program: Path): Unit = {
     libraries = linking.libraries
-    runOrFail(compiler(), [file.value, "-o", ml.value, "--separate", "--no-std"] + sourceArgs(own, roots) + interfaces(libraries))
+    runOrFail(
+      compiler(),
+      [file.value, "-o", ml.value, "--separate", "--no-std"] + sourceArgs(own, roots) + interfaces(libraries),
+    )
     linkProgram(linking, ml, program)
   }
 
@@ -115,7 +122,10 @@ module Compiling {
     if (packages.isEmpty()) runOrFail("ocamlopt", ["-I", "+unix"] + (if (link) ["unix.cmxa"] else []) + args)
     else {
       (command, before) = ocamlfind()
-      runOrFail(command, before + ["ocamlopt", "-package", (["unix"] + packages).joinToString(",")] + (if (link) ["-linkpkg"] else []) + args)
+      runOrFail(
+        command,
+        before + ["ocamlopt", "-package", (["unix"] + packages).joinToString(",")] + (if (link) ["-linkpkg"] else []) + args,
+      )
     }
 
   // How to run ocamlfind: where the shell finds it, or through opam, in its current switch, so
@@ -123,15 +133,24 @@ module Compiling {
   @Building private ocamlfind(): (String, List<String>) =
     if (onPath("ocamlfind")) ("ocamlfind", [])
     else if (onPath("opam")) ("opam", ["exec", "--", "ocamlfind"])
-    else fail("a library calls OCaml packages, which need ocamlfind: install opam, then opam install ocamlfind and the packages")
+    else fail(
+      "a library calls OCaml packages, which need ocamlfind: install opam, then opam install ocamlfind and the packages",
+    )
 
   @Process private onPath(command: String): Boolean = output("sh", ["-c", "command -v \"\$1\" || true", "sh", command]).trim().isNotEmpty()
 
   // packages, from roots, as a library: OCaml at ml, which is the module unit, and its interface,
   // which programs that use it are checked against, in folder interface.
   @Building internal compilePackages(linking: Linking, own: List<Path>, roots: List<Path>, packages: List<String>, unit: String, ml: Path, interface: Path): Unit = {
-    runOrFail(compiler(), ["--library", interface.value, "-o", ml.value, "--no-std"] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages)
-    ocamlopt(linking.ocamlPackages, false, ["-c", "-w", "-a", "-I", linking.core.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value])
+    runOrFail(
+      compiler(),
+      ["--library", interface.value, "-o", ml.value, "--no-std"] + sourceArgs(own, roots) + interfaces(linking.libraries) + packages,
+    )
+    ocamlopt(
+      linking.ocamlPackages,
+      false,
+      ["-c", "-w", "-a", "-I", linking.core.value] + linking.libraries.flatMap { ["-I", it.folder.value] } + [ml.value],
+    )
   }
 
   // Where a published library lists the OCaml packages it calls, one a line.
@@ -183,7 +202,15 @@ module Compiling {
       println("  compiling the standard library")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(core, []), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
+      compilePackages(
+        Linking(core, []),
+        [src],
+        [src],
+        packagesIn(src, src),
+        unit,
+        folder.resolve("$unit.ml"),
+        folder.resolve("interface"),
+      )
       folder.resolve("done").writeText("")
     }
     CompiledLibrary(Coordinates("fckt", "std", fcktVersion()), folder, unit)
@@ -200,7 +227,15 @@ module Compiling {
       before = uses.fold(done) { all, used -> compileLibrary(toolchain, core, std, chosen, used, through + [lib], all, repositories) }
       // What it uses, and what they do: their interfaces' types are its interface's.
       needed = closure(uses, chosen, [], repositories)
-      before + [compileOne(toolchain, core, lib, std + before.filter { needed.contains(it.coordinates) }, repositories)]
+      before + [
+        compileOne(
+          toolchain,
+          core,
+          lib,
+          std + before.filter { needed.contains(it.coordinates) },
+          repositories,
+        ),
+      ]
     }
 
   // Of those chosen, the versions of the libraries lib says it uses.
@@ -235,7 +270,15 @@ module Compiling {
       println("  compiling ${CoordinatesText.of(lib)}")
       folder.delete()
       folder.makeDirs()
-      compilePackages(Linking(core, uses, ocamlPackages), [src], [src], packagesIn(src, src), unit, folder.resolve("$unit.ml"), folder.resolve("interface"))
+      compilePackages(
+        Linking(core, uses, ocamlPackages),
+        [src],
+        [src],
+        packagesIn(src, src),
+        unit,
+        folder.resolve("$unit.ml"),
+        folder.resolve("interface"),
+      )
       folder.resolve("done").writeText("")
     }
     CompiledLibrary(lib, folder, unit, ocamlPackages)
