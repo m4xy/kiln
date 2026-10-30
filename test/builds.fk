@@ -81,6 +81,7 @@ tasks = [
 // it's applied.
 @Test @FileSystem @Process aPluginMakesTasks() = {
   dir = projects("plugins")
+  home = own("plugins")
   greeting(dir)
   write(dir, "shop/src/pricing/Prices.fk", prices)
   shop = dir.resolve("shop")
@@ -101,22 +102,28 @@ plugins = [Fckt(), $plugins]
   build("projectAt(\"../greeting\")", "Greetings(), Greetings(W = Howdy)")
   // Two plugins can't make the same task; the script makes it, to say which.
   expectContains(
-    kiln(shop, ["greet"]).value,
+    kilnIn(home, shop, ["greet"]).value,
     "BUILD FAILED: plugins greetings and greetings both make a task greet: make it in tasks, to say which it is",
   )
   build("projectAt(\"../greeting\")", "Greetings(W = Howdy)")
-  expectContains(kiln(shop, ["tasks"]).value, "  greet - Greets the project")
-  assertEquals("> Task :greet\n  howdy, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  expectContains(kilnIn(home, shop, ["tasks"]).value, "  greet - Greets the project")
+  assertEquals(
+    "> Task :greet\n  howdy, shop\nBUILD SUCCESSFUL\n",
+    kilnIn(home, shop, ["greet"]).value,
+  )
   // Published, it's used from the repository.
   build("library(\"uk.m4xy:greeting:1.0.0\")", "Greetings()")
   expectContains(
-    kiln(shop, ["greet"]).value,
+    kilnIn(home, shop, ["greet"]).value,
     "settings.fk: it uses uk.m4xy:greeting:1.0.0, which isn't in",
   )
-  assertEquals(0, kiln(dir.resolve("greeting"), ["publishLocal"]).code)
-  assertEquals("> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n", kiln(shop, ["greet"]).value)
+  assertEquals(0, kilnIn(home, dir.resolve("greeting"), ["publishLocal"]).code)
+  assertEquals(
+    "> Task :greet\n  hello, shop\nBUILD SUCCESSFUL\n",
+    kilnIn(home, shop, ["greet"]).value,
+  )
   // kiln's library isn't published with it, as kiln has it.
-  assertEquals("", path("build/test-repository/uk.m4xy/greeting/1.0.0/dependencies").readText())
+  assertEquals("", home.resolve("repository/uk.m4xy/greeting/1.0.0/dependencies").readText())
 }
 
 // A script's own task replaces a plugin's, or one every project has, of its name.
@@ -236,15 +243,16 @@ module Cleaning : Plugin {
 // Libraries are looked for in settings.fk's repositories, in order: the first that has one gives it.
 @Test @FileSystem @Process repositoriesAreTriedInOrder() = {
   dir = projects("ordered")
+  home = own("ordered")
   write(
     dir,
     "words/build.fk",
     fckt + "project = Project(name = \"words\", group = \"uk.m4xy\", version = \"1.0.0\")\n",
   )
   write(dir, "words/src/uk/m4xy/words/Words.fk", "module Words {\n  word: String = \"local\"\n}\n")
-  assertEquals(0, kiln(dir.resolve("words"), ["publishLocal"]).code)
+  assertEquals(0, kilnIn(home, dir.resolve("words"), ["publishLocal"]).code)
   // The team's repository has another words 1.0.0.
-  path("build/test-repository/uk.m4xy/words/1.0.0").copyRecursively(
+  home.resolve("repository/uk.m4xy/words/1.0.0").copyRecursively(
     dir.resolve("team/uk.m4xy/words/1.0.0"),
   )
   write(
@@ -268,12 +276,12 @@ module Cleaning : Plugin {
     "settings = Settings(repositories = [$repositories])\n",
   )
   order("At(path(\"../team\")), Local")
-  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nteam\n")
+  expectContains(kilnIn(home, dir.resolve("shop"), ["run"]).value, "> Task :run\nteam\n")
   order("Local, At(path(\"../team\"))")
-  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "> Task :run\nlocal\n")
+  expectContains(kilnIn(home, dir.resolve("shop"), ["run"]).value, "> Task :run\nlocal\n")
   order("At(path(\"../nowhere\"))")
   expectContains(
-    kiln(dir.resolve("shop"), ["run"]).value,
+    kilnIn(home, dir.resolve("shop"), ["run"]).value,
     "test-projects/ordered/nowhere: run kiln publishLocal in its project",
   )
 }

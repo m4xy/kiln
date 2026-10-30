@@ -34,10 +34,32 @@ fckt = "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.kiln.fckt.FcktTasks\n\nplu
 }
 
 // Runs the kiln just built in folder: its exit code and everything it printed.
-@Process kiln(folder: Path, args: List<String>): Exit<String> = {
+@Process kiln(folder: Path, args: List<String>): Exit<String> =
+  kilnWith(folder, args, path("build/test-repository"), path("build/test-cache"))
+
+// A repository and a cache of the test's own, under build/test-own/name, fresh: what a test that
+// publishes and compiles libraries, and says what was compiled, runs kilnIn with, so tests run
+// together don't share them.
+@FileSystem own(name: String): Path = {
+  folder = path("build/test-own").resolve(name)
+  folder.delete()
+  folder.makeDirs()
+  folder
+}
+
+// Runs the kiln just built in folder, with the repository and cache in home, as own makes it.
+@Process kilnIn(home: Path, folder: Path, args: List<String>): Exit<String> =
+  kilnWith(folder, args, home.resolve("repository"), home.resolve("cache"))
+
+@Process private kilnWith(
+  folder: Path,
+  args: List<String>,
+  repository: Path,
+  cache: Path,
+): Exit<String> = {
   home = here()
-  script = "d=\$1; h=\$2; shift 2; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/build/test-repository\" KILN_CACHE=\"\$h/build/test-cache\" exec \"\$h/build/bin/kiln\" \"\$@\""
-  exit = run("sh", ["-c", script, "sh", folder.value, home] + args)
+  script = "d=\$1; h=\$2; r=\$3; c=\$4; shift 4; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/\$r\" KILN_CACHE=\"\$h/\$c\" exec \"\$h/build/bin/kiln\" \"\$@\""
+  exit = run("sh", ["-c", script, "sh", folder.value, home, repository.value, cache.value] + args)
   // The standard library is compiled once for all the tests, by whichever runs first.
   Exit(exit.code, exit.value.replace("  compiling the standard library\n", ""))
 }

@@ -1,14 +1,17 @@
+import fckt.io.Path
 import fckt.io.FileSystem
 import fckt.io.Process
 import fckt.io.Paths.*
 import fckt.io.Files.*
 import uk.m4xy.fktests.api.Test
 
-// Projects use libraries published locally, and other projects straight from their folders.
-@Test @FileSystem @Process librariesArePublishedAndUsed() = {
-  dir = projects("dependencies")
-  path("build/test-repository").delete()
-  path("build/test-cache").delete()
+// Projects use libraries published locally, and other projects straight from their folders. Each
+// test has a repository and a cache of its own, as it says what's compiled.
+
+// Fresh projects, in build/test-projects/name: units, a library; money, a library that uses it;
+// pricing, which uses money; and shop, a program, which uses pricing from its folder.
+@FileSystem libraries(name: String): Path = {
+  dir = projects(name)
   write(
     dir,
     "units/build.fk",
@@ -49,19 +52,34 @@ import uk.m4xy.fktests.api.Test
     "shop/src/main.fk",
     "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(3))\n",
   )
+  dir
+}
+
+// units and money, published to home's repository.
+@FileSystem @Process published(home: Path, dir: Path): Unit = {
+  assertEquals(0, kilnIn(home, dir.resolve("units"), ["publishLocal"]).code)
+  assertEquals(0, kilnIn(home, dir.resolve("money"), ["publishLocal"]).code)
+}
+
+@Test @FileSystem @Process aLibraryIsPublishedAndUsed() = {
+  dir = libraries("published")
+  home = own("published")
   units = dir.resolve("units")
   money = dir.resolve("money")
   // Nothing's published yet.
-  expectContains(kiln(dir.resolve("shop"), ["run"]).value, "there's no uk.m4xy:money:2.1.0 in")
+  expectContains(
+    kilnIn(home, dir.resolve("shop"), ["run"]).value,
+    "there's no uk.m4xy:money:2.1.0 in",
+  )
   // A library is compiled, checked and copied: only what's under its group.
   expectContains(
-    kiln(units, ["publishLocal"]).value,
+    kilnIn(home, units, ["publishLocal"]).value,
     "> Task :check\n> Task :publishLocal\n  published uk.m4xy:units:1.0.0",
   )
-  assertEquals(0, kiln(money, ["publishLocal"]).code)
+  assertEquals(0, kilnIn(home, money, ["publishLocal"]).code)
   // publishLocal compiled it, so it's up to date.
-  expectContains(kiln(money, ["compile"]).value, "> Task :compile\n  up to date\n")
-  repository = path("build/test-repository")
+  expectContains(kilnIn(home, money, ["compile"]).value, "> Task :compile\n  up to date\n")
+  repository = home.resolve("repository")
   assertEquals(
     "uk.m4xy:units:1.0.0\n",
     repository.resolve("uk.m4xy/money/2.1.0/dependencies").readText(),
@@ -71,55 +89,80 @@ import uk.m4xy.fktests.api.Test
   // money's units was, when money was.
   assertEquals(
     "> Task :compile\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n",
-    kiln(dir.resolve("shop"), ["run"]).value,
+    kilnIn(home, dir.resolve("shop"), ["run"]).value,
   )
   assertEquals(
     "> Task :compile\n  up to date\n> Task :run\ncosts 300p\nBUILD SUCCESSFUL\n",
-    kiln(dir.resolve("shop"), ["run"]).value,
+    kilnIn(home, dir.resolve("shop"), ["run"]).value,
   )
   // Where editors find its packages and libraries.
   paths = dir.resolve("shop/.kiln/paths").readLines()
   assertEquals(["source src", "source ../pricing/src"], paths.filter { it.startsWith("source ") })
   // The standard library's interface, and units' and money's.
   assertEquals(3, paths.filter { it.startsWith("library ") && it.endsWith("/interface") }.size)
-  // Published again, it's compiled again.
+}
+
+// Published again, it's compiled again.
+@Test @FileSystem @Process aLibraryPublishedAgainIsCompiledAgain() = {
+  dir = libraries("again")
+  home = own("again")
+  published(home, dir)
+  assertEquals(0, kilnIn(home, dir.resolve("shop"), ["run"]).code)
   write(
     dir,
     "units/src/uk/m4xy/units/Cents.fk",
     "module Cents {\n  of(pounds: Int): Int = pounds * 100 + 0\n}\n",
   )
-  assertEquals(0, kiln(units, ["publishLocal"]).code)
+  assertEquals(0, kilnIn(home, dir.resolve("units"), ["publishLocal"]).code)
   expectContains(
-    kiln(dir.resolve("shop"), ["run"]).value,
+    kilnIn(home, dir.resolve("shop"), ["run"]).value,
     "  compiling uk.m4xy:units:1.0.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 300p",
   )
-  // What a library shows says its types, as programs are checked against them without its code.
+}
+
+// What a library shows says its types, as programs are checked against them without its code; and
+// a library that doesn't check, or has packages outside its group, isn't published.
+@Test @FileSystem @Process aLibraryThatDoesntCheckIsntPublished() = {
+  dir = libraries("unchecked")
+  home = own("unchecked")
+  money = dir.resolve("money")
+  assertEquals(0, kilnIn(home, dir.resolve("units"), ["publishLocal"]).code)
   write(dir, "money/src/uk/m4xy/money/Loose.fk", "module Loose {\n  twice(x: Int) = x * 2\n}\n")
   expectContains(
-    kiln(money, ["compile"]).value,
+    kilnIn(home, money, ["compile"]).value,
     "'twice' is in a library's interface, which programs are checked against, so it needs a result type",
   )
   money.resolve("src/uk/m4xy/money/Loose.fk").delete()
   // A library that doesn't check, or has packages outside its group, isn't published.
   write(dir, "money/src/uk/m4xy/money/Broken.fk", "module Broken { f(): Int = \"x\" }\n")
-  expectContains(kiln(money, ["publishLocal"]).value, "Broken.fk:1:28: error: type mismatch")
+  expectContains(
+    kilnIn(home, money, ["publishLocal"]).value,
+    "Broken.fk:1:28: error: type mismatch",
+  )
   money.resolve("src/uk/m4xy/money/Broken.fk").delete()
   write(dir, "money/src/helpers/Help.fk", "module Help { x(): Int = 1 }\n")
-  expectContains(kiln(money, ["publishLocal"]).value, "package helpers isn't under uk.m4xy")
+  expectContains(kilnIn(home, money, ["publishLocal"]).value, "package helpers isn't under uk.m4xy")
   money.resolve("src/helpers").delete()
-  // Of two versions asked for, the higher.
+}
+
+// Of two versions asked for, the higher; money's compiled with it.
+@Test @FileSystem @Process theHigherOfTwoVersionsIsUsed() = {
+  dir = libraries("versions")
+  home = own("versions")
+  units = dir.resolve("units")
+  published(home, dir)
   write(
     dir,
     "units/build.fk",
     fckt + "project = Project(name = \"units\", group = \"uk.m4xy\", version = \"1.10.0\")\n",
   )
-  assertEquals(0, kiln(units, ["publishLocal"]).code)
+  assertEquals(0, kilnIn(home, units, ["publishLocal"]).code)
   write(
     dir,
     "pricing/build.fk",
     fckt + "project = Project(name = \"pricing\", dependencies = [library(\"uk.m4xy:money:2.1.0\"), library(\"uk.m4xy:units:1.10.0\")])\n",
   )
-  roots = kiln(
+  roots = kilnIn(home, 
     dir.resolve("pricing"),
     ["--quiet", "roots"],
   ).value.lines().filter { it.isNotBlank() }
@@ -134,7 +177,7 @@ import uk.m4xy.fktests.api.Test
     "import fckt.io.Console\nimport pricing.Prices\nmain() = println(Prices.label(4))\n",
   )
   expectContains(
-    kiln(dir.resolve("pricing"), ["run"]).value,
+    kilnIn(home, dir.resolve("pricing"), ["run"]).value,
     "  compiling uk.m4xy:units:1.10.0\n  compiling uk.m4xy:money:2.1.0\n> Task :run\ncosts 400p",
   )
 }
