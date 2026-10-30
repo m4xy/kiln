@@ -82,7 +82,7 @@ internal module Scripts {
         work.delete()
         exit.code
       } else {
-        native = run("ocamlopt", linked(linking, ml, work.resolve("build")))
+        native = run("ocamlc", linked(bytecode(linking), ml, work.resolve("build")))
         if (native.code == 0) {
           work.resolve("stamp").writeText(key)
           Compiling.moved(work.resolve("build").value, built.value)
@@ -120,10 +120,31 @@ internal module Scripts {
   }
 
   // ocamlopt's arguments to link the OCaml at ml with linking's core and libraries, to program.
-  private linked(linking: Linking, ml: Path, program: Path): List<String> =
-    ["-w", "-a", "-I", "+unix", "-I", linking.core.value] +
-      linking.libraries.flatMap { ["-I", it.folder.value] } + ["unix.cmxa", linking.core.resolve("fckt_core.cmx").value] +
-      linking.libraries.map { it.folder.resolve("${it.unit}.cmx").value } + [ml.value, "-o", program.value]
+  // The core and linking's libraries, each compiled to bytecode once, beside what's compiled of
+  // it: its folder and unit. A script is bytecode, which ocamlrun runs, as macOS checks a program
+  // that's new before it first runs, one at a time, for longer than the script takes.
+  @Building private bytecode(linking: Linking): List<(Path, String)> =
+    ([(linking.core, "fckt_core")] + linking.libraries.map { (it.folder, it.unit) }).fold(
+      noUnits,
+    ) { done, unit ->
+      (folder, name) = unit
+      at = folder.resolve("bytecode")
+      Compiling.made(at) { into ->
+        Compiling.runOrFail(
+          "ocamlc",
+          ["-c", "-w", "-a", "-I", "+unix"] + done.flatMap { d, _ -> ["-I", d.value] } +
+            ["-o", into.resolve("$name.cmo").value, folder.resolve("$name.ml").value],
+        )
+      }
+      done + [(at, name)]
+    }
+
+  private noUnits: List<(Path, String)> = []
+
+  // ocamlc's arguments to link the OCaml at ml with units, as bytecode does, to program.
+  private linked(units: List<(Path, String)>, ml: Path, program: Path): List<String> =
+    ["-w", "-a", "-I", "+unix"] + units.flatMap { at, _ -> ["-I", at.value] } + ["unix.cma"] +
+      units.map { at, name -> at.resolve("$name.cmo").value } + [ml.value, "-o", program.value]
 
   // Where uk.m4xy.kiln's source is: KILN_LIB; or lib/kiln beside the folder kiln is in, as it's
   // installed; or, built where it's developed, its src.
