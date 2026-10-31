@@ -23,7 +23,7 @@ internal module PluginSources {
       Folder(folder) -> [folder.resolve("src")]
       Library(lib) -> librarySources(lib, emptySet(), repositories)
       Git(lib, source) -> {
-        Dependencies.fetched(lib, source, repositories)
+        Dependencies.fetched(lib, source)
         librarySources(lib, emptySet(), repositories)
       }
       Kiln -> []
@@ -40,6 +40,10 @@ internal module PluginSources {
       Some(folder) -> [folder.resolve("src")] + published(lib, repositories).flatMap { used ->
         when (used) {
           Library(next) -> librarySources(next, seen + lib, repositories)
+          Git(next, source) -> {
+            Dependencies.fetched(next, source)
+            librarySources(next, seen + lib, repositories)
+          }
           else -> []
         }
       }

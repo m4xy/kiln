@@ -5,6 +5,7 @@ import fckt.io.Processes.*
 import fckt.io.Process
 import fckt.io.FileSystem
 import fckt.effects.Fail
+import fckt.io.Console
 
 // What a project depends on, and where their packages are.
 module Dependencies {
@@ -49,12 +50,16 @@ module Dependencies {
   // Where publishLocal puts lib: its folder in the local repository, group/name/version.
   @Process internal publishedAt(lib: Coordinates): Path = repository().resolve(within(lib))
 
-  // Where lib is: its folder in the first of repositories that has it.
+  // Where lib is: fetched at the commit the lock has it at, or its folder in the first of
+  // repositories that has it.
   @FileSystem @Process internal folderOf(
     lib: Coordinates,
     repositories: List<Repository>,
-  ): Option<Path> =
-    repositories.map { folderIn(it).resolve(within(lib)) }.find { it.isDirectory() }
+  ): Option<Path> = {
+    locked = lockedAt(lib).map { fetchedFolder(it, lib) }.filter { it.isDirectory() }
+    if (locked.isSome()) locked
+    else repositories.map { folderIn(it).resolve(within(lib)) }.find { it.isDirectory() }
+  }
 
   // The folder a repository is.
   @Process internal folderIn(source: Repository): Path = when (source) {
@@ -82,36 +87,59 @@ module Dependencies {
         libraries(rest + published(lib, repositories), found + [lib], repositories)
       }
     [Git(lib, source), *rest] -> {
-      fetched(lib, source, repositories)
+      fetched(lib, source)
       libraries([Library(lib)] + rest, found, repositories)
     }
     [Folder(_), *rest] -> libraries(rest, found, repositories)
     [Kiln, *rest] -> libraries(rest, found, repositories)
   }
 
-  // What a published library depends on: its dependencies file, a library's coordinates a line.
+  // What a published library depends on: its dependencies file, a library's coordinates a line,
+  // and where it's fetched from, if it's from git.
   @FileSystem @Process internal published(
     lib: Coordinates,
     repositories: List<Repository>,
   ): List<Dependency> = when (folderOf(lib, repositories)) {
     Some(folder) -> {
       file = folder.resolve("dependencies")
-      if (file.exists()) file.readLines().filter { !it.isBlank() }.map { library(it.trim()) } else []
+      if (file.exists()) file.readLines().filter { !it.isBlank() }.map { line ->
+        when (line.trim().split(" ")) {
+          [coordinates, url, ref, folder] -> library(coordinates, url, ref, folder)
+          else -> library(line.trim())
+        }
+      }
+      else []
     }
     None -> []
   }
 
-  // lib, as source says, from git, published with kiln publishLocal, which fetches what it uses
-  // the same way; unless one of repositories has it already.
-  @Building internal fetched(
-    lib: Coordinates,
-    source: GitSource,
-    repositories: List<Repository>,
-  ): Unit = {
-    target = publishedAt(lib)
+  // lib, from git, at the commit the lock has it at, or, if it hasn't, the commit source's ref is
+  // now, which it's locked at from then on: published with kiln publishLocal, unchecked, to a
+  // folder of its own for the commit, with the libraries it fetches locked in the same lock.
+  @Building internal fetched(lib: Coordinates, source: GitSource): Unit = {
+    commit = when (lockedCommit(lib, source)) {
+      Some(c) -> c
+      None -> {
+        c = commitOf(source)
+        locked(lib, source, c)
+        c
+      }
+    }
+    target = fetchedFolder(commit, lib)
     target.parent.forEach { it.makeDirs() }
-    Locks.once(target.value + ".fetching", () -> folderOf(lib, repositories).isSome()) {
-      args = ["-c", script, "sh", source.url, source.ref, source.folder, kilnProgram()]
+    Locks.once(target.value + ".fetching", () -> target.resolve("dependencies").exists()) {
+      root = fetchedRoot().resolve(commit).value
+      args = [
+        "-c",
+        script,
+        "sh",
+        source.url,
+        commit,
+        source.ref,
+        source.folder,
+        kilnProgram(),
+        root,
+      ]
       failed = "couldn't publish ${CoordinatesText.of(lib)} from ${source.url} at ${source.ref}"
       // Run --quiet, for another program to read, what it prints is said only if it fails.
       if (env("KILN_QUIET").isSome()) {
@@ -119,17 +147,97 @@ module Dependencies {
         if (exit.code != 0) fail("$failed:\n${exit.value.trim()}")
       }
       else if (runAttached("sh", args) != 0) fail(failed)
-      if (folderOf(lib, repositories).isNone()) fail(
+      if (!target.resolve("dependencies").exists()) fail(
         "${source.url} at ${source.ref} doesn't publish ${CoordinatesText.of(lib)}${if (source.folder == ".") "" else " from ${source.folder}"}",
       )
     }
   }
 
+  // The commit source's ref is: the commit a tag is of, or the ref, if it's a commit.
+  @Process private commitOf(source: GitSource): String = {
+    found = run("git", ["ls-remote", source.url, source.ref, source.ref + "^{}"])
+    if (found.code != 0) fail("couldn't read ${source.url}: ${found.value.trim()}")
+    lines = found.value.lines().filter { it.contains("\t") }
+    peeled = lines.find { it.endsWith("^{}") }
+    when (peeled.orElse { lines.firstOrNone() }) {
+      Some(line) -> line.substringBefore("\t")
+      None ->
+        if (source.ref.length == 40 && source.ref.toList().all { it.isDigit() || (it >= 'a' && it <= 'f') })
+          source.ref
+        else fail("there's no ${source.ref} in ${source.url}")
+    }
+  }
+
+  // Where what kiln fetches from git is published, a folder for each commit: KILN_FETCHED, or
+  // fetched beside the local repository.
+  @Process internal fetchedRoot(): Path = when (env("KILN_FETCHED")) {
+    Some(folder) -> path(folder)
+    None -> repository().resolve("../fetched")
+  }
+
+  @Process private fetchedFolder(commit: String, lib: Coordinates): Path =
+    fetchedRoot().resolve(commit).resolve(within(lib))
+
+  // The lock, which says the commit each library from git is fetched at, for every kiln a build
+  // runs: KILN_LOCK, which kiln sets, or kiln.lock here.
+  @Process internal lockFile(): Path = path(env("KILN_LOCK").getOrElse("kiln.lock"))
+
+  // The lock's lines: a library's coordinates, its repository, the ref and the commit it was.
+  @FileSystem @Process private lockLines(): List<(String, String, String, String)> = {
+    file = lockFile()
+    if (!file.exists()) []
+    else file.readLines().filter { !it.isBlank() && !it.startsWith("#") }.flatMap { line ->
+      when (line.trim().split(" ")) {
+        [coordinates, url, ref, commit] -> [(coordinates, url, ref, commit)]
+        else -> []
+      }
+    }
+  }
+
+  @FileSystem @Process private lockedCommit(lib: Coordinates, source: GitSource): Option<String> =
+    lockLines().find { line ->
+      (coordinates, url, ref, _) = line
+      coordinates == CoordinatesText.of(lib) && url == source.url && ref == source.ref
+    }.map { line ->
+      (_, _, _, commit) = line
+      commit
+    }
+
+  @FileSystem @Process private lockedAt(lib: Coordinates): Option<String> =
+    lockLines().find { line ->
+      (coordinates, _, _, _) = line
+      coordinates == CoordinatesText.of(lib)
+    }.map { line ->
+      (_, _, _, commit) = line
+      commit
+    }
+
+  // Locks lib at commit, in place of where the lock had it.
+  @Building private locked(lib: Coordinates, source: GitSource, commit: String): Unit = {
+    coordinates = CoordinatesText.of(lib)
+    kept = lockLines().filter { line ->
+      (other, _, _, _) = line
+      other != coordinates
+    }
+    lines = (kept + [(coordinates, source.url, source.ref, commit)]).map { line ->
+      (c, url, ref, at) = line
+      "$c $url $ref $at"
+    }
+    lockFile().writeText(
+      "# What kiln fetched from git, at the commit it fetched: kiln update fetches the newest.\n" +
+        lines.sorted().map { "$it\n" }.joinToString(""),
+    )
+    if (env("KILN_QUIET").isNone()) println(
+      "  locked $coordinates at ${source.ref}, ${commit.take(12)}",
+    )
+  }
+
   @Process private kilnProgram(): String = env("KILN").getOrElse("kiln")
 
-  // Fetches the ref alone, published from a folder that's gone after; all it prints goes where
-  // errors go, so what kiln prints for another program to read is as it was.
-  private script = "set -e; exec 1>&2; at=\$(mktemp -d); trap 'rm -rf \"\$at\"' EXIT; echo \"  fetching \$1 at \$2\"; git -C \"\$at\" init -q; git -C \"\$at\" fetch -q --depth 1 \"\$1\" \"\$2\"; git -C \"\$at\" -c advice.detachedHead=false checkout -q FETCH_HEAD; unset KILN_SETTINGS; \"\$4\" -C \"\$at/\$3\" publishLocal"
+  // Fetches the commit, or the ref if it can't fetch a commit alone, to a folder that's gone after,
+  // and publishes it; all it prints goes where errors go, so what kiln prints for another program
+  // to read is as it was.
+  private script = "set -e; exec 1>&2; at=\$(mktemp -d); trap 'rm -rf \"\$at\"' EXIT; echo \"  fetching \$1 at \$3\"; git -C \"\$at\" init -q; git -C \"\$at\" fetch -q --depth 1 \"\$1\" \"\$2\" 2>/dev/null || git -C \"\$at\" fetch -q \"\$1\" \"\$3\"; git -C \"\$at\" -c advice.detachedHead=false checkout -q \"\$2\"; unset KILN_SETTINGS; KILN_PUBLISH=\"\$6\" \"\$5\" -C \"\$at/\$4\" publishLocal --unchecked"
 
   // Of each library, the highest version asked for.
   chosen(libs: List<Coordinates>): List<Coordinates> =

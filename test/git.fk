@@ -23,14 +23,20 @@ import uk.m4xy.fktests.api.Test
     "pricing/build.fk",
     fckt + "project = Project(\n  name = \"pricing\",\n  dependencies = [\n    library(\n      \"uk.m4xy:money:2.1.0\",\n      git = \"$root/money\",\n      ref = \"trunk\",\n    ),\n  ],\n)\n",
   )
+  // Too wide to check, as kiln publishes what it fetches without checking it.
+  write(
+    dir,
+    "units/src/uk/m4xy/units/Wide.fk",
+    "module Wide {\n  all: List<Int> = [1111111111, 2222222222, 3333333333, 4444444444, 5555555555, 6666666666, 77777777]\n}\n",
+  )
   committed(dir.resolve("units"), "git tag v1.0.0")
   committed(dir.resolve("money"), "git branch -m trunk")
   dir
 }
 
-// folder, a git repository with all of it committed, then then run there.
+// folder, a git repository, if it isn't, with all of it committed, then then run there.
 @Process committed(folder: Path, then: String): Unit = {
-  script = "cd \"\$1\" && git init -q -b main && git add . && git -c user.name=t -c user.email=t@t commit -q -m one && $then"
+  script = "cd \"\$1\" && { [ -d .git ] || git init -q -b main; } && git add . && git -c user.name=t -c user.email=t@t commit -q -m one && $then"
   assertEquals(0, run("sh", ["-c", script, "sh", folder.value]).code)
 }
 
@@ -40,9 +46,27 @@ import uk.m4xy.fktests.api.Test
   ran = kilnIn(home, dir.resolve("shop"), ["run"])
   expectContains(ran.value, "costs 300p")
   assertEquals(0, ran.code)
-  assertEquals(true, home.resolve("repository/uk.m4xy/units/1.0.0/dependencies").exists())
+  lock = dir.resolve("shop/kiln.lock").readText()
+  expectContains(lock, "uk.m4xy:money:2.1.0 ${here()}/${dir.value}/money trunk ")
+  expectContains(lock, "uk.m4xy:units:1.0.0 ${here()}/${dir.value}/units v1.0.0 ")
   again = kilnIn(home, dir.resolve("shop"), ["run"])
   assertEquals(false, again.value.contains("fetching"))
+  assertEquals(lock, dir.resolve("shop/kiln.lock").readText())
+}
+
+@Test @FileSystem @Process aLockedLibraryStaysUntilUpdated() = {
+  dir = fetchable("locked")
+  home = own("locked")
+  expectContains(kilnIn(home, dir.resolve("shop"), ["run"]).value, "costs 300p")
+  write(
+    dir,
+    "money/src/uk/m4xy/money/Money.fk",
+    "import uk.m4xy.units.Cents\n\nmodule Money {\n  format(pounds: Int): String = \"\${Cents.of(pounds)} pence\"\n}\n",
+  )
+  committed(dir.resolve("money"), "true")
+  expectContains(kilnIn(home, dir.resolve("shop"), ["run"]).value, "costs 300p")
+  assertEquals(0, kilnIn(home, dir.resolve("shop"), ["update"]).code)
+  expectContains(kilnIn(home, dir.resolve("shop"), ["run"]).value, "costs 300 pence")
 }
 
 @Test @FileSystem @Process aRefThatIsntThereSaysSo() = {
@@ -55,8 +79,5 @@ import uk.m4xy.fktests.api.Test
   )
   built = kilnIn(home, dir.resolve("pricing"), ["compile"])
   assertEquals(1, built.code)
-  expectContains(
-    built.value,
-    "couldn't publish uk.m4xy:money:2.1.0 from ${here()}/${dir.value}/money at v9",
-  )
+  expectContains(built.value, "there's no v9 in ${here()}/${dir.value}/money")
 }

@@ -53,6 +53,13 @@ module Launch {
     args: List<String>,
   ): Int = {
     names = args.takeWhile { it != "--" }
+    // One lock for the build, beside settings.fk if they apply, which every kiln it runs uses;
+    // kiln update starts it again.
+    if (env("KILN_LOCK").isNone()) {
+      lock = settings.map { it.folder }.getOrElse(here).resolve("kiln.lock")
+      setEnv("KILN_LOCK", lock.value)
+      if (names.contains("update")) lock.delete()
+    }
     included = when (settings) {
       Some(found) -> if (found.folder == here && !names.contains("--quiet")) found.settings.projects else []
       None -> []

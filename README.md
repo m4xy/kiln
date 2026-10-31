@@ -318,10 +318,19 @@ project = Project(
 )
 ```
 
-A version in the local repository is never fetched again, so a library published there by hand
-is used rather than git's, and a branch is what it was when it was first fetched: to have it
-again, delete its folder there. When several kilns want one at the same time, one fetches it while
-the others wait.
+What was fetched is locked: `kiln.lock`, beside `settings.fk` if there is one, or else `build.fk`,
+says the commit each library from git was, its own libraries from git among them, and every kiln
+the build runs fetches that commit from then on, whatever its ref is now. Commit the lock, and
+every machine builds the same; `kiln update` fetches the newest at each ref and locks that.
+
+```
+# What kiln fetched from git, at the commit it fetched: kiln update fetches the newest.
+uk.m4xy:fk-http:0.1.0 https://github.com/m4xy/fk-http main 3f2a9c1e...
+```
+
+A commit is fetched once, to `~/.kiln/fetched/<commit>`, and published there without being
+checked, since its own repository checks it. A library published locally by hand is never used in
+its place: use the project from its folder, with `projectAt`, to try a change to it.
 
 ## How it works
 

@@ -39,8 +39,16 @@ module Programs {
     Task(
       FcktTasks.publishLocal,
       "Checks it, then publishes it as a library to ~/.kiln/repository",
-      dependsOn = [Check],
+      dependsOn = if (layout.processors.isEmpty()) [Check] else [Check, FcktTasks.process],
       action = build -> publishLocal(build.project, layout),
+    ),
+    Task(
+      FcktTasks.update,
+      "Fetches the newest of what it uses from git, at the refs it says, and locks it there",
+      action = build -> {
+        Resolving.resolve(build.project, layout)
+        Unit
+      },
     ),
     Task(
       FcktTasks.roots,

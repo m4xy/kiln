@@ -47,13 +47,17 @@ module Builds {
     given = args.takeWhile { it != "--" }
     quiet = given.contains("--quiet")
     if (quiet) setEnv("KILN_QUIET", "1")
-    names = given.filter { it != "--quiet" }
+    // With --unchecked, as kiln publishes what it fetches from git, nothing waits for check.
+    unchecked = given.contains("--unchecked")
+    names = given.filter { it != "--quiet" && it != "--unchecked" }
     build = Invocation(
       project.copy(repositories = settings.from(settingsFolder()).repositories),
       args.dropWhile { it != "--" }.drop(1),
     )
     result = attempt {
-      tasks = tasksOf(build.project, tasks, plugins)
+      all = tasksOf(build.project, tasks, plugins)
+      tasks = if (unchecked) all.map { t -> t.copy(dependsOn = t.dependsOn.filter { it != Check }) }
+      else all
       if (names.isEmpty() || names.contains("tasks")) listTasks(build.project, tasks)
       else {
         order(names.map { named(it, tasks) }, tasks, []).forEach { task ->

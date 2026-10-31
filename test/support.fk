@@ -64,7 +64,7 @@ fckt = "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.kiln.fckt.FcktTasks\n\nplu
   cache: Path,
 ): Exit<String> = {
   home = here()
-  script = "d=\$1; h=\$2; r=\$3; c=\$4; shift 4; cd \"\$d\" && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/\$r\" KILN_CACHE=\"\$h/\$c\" exec \"\$h/build/bin/kiln\" \"\$@\""
+  script = "d=\$1; h=\$2; r=\$3; c=\$4; shift 4; cd \"\$d\" && unset KILN_LOCK KILN_FETCHED KILN_PUBLISH KILN_QUIET && KILN=\"\$h/build/bin/kiln\" KILN_LIB=\"\$h/src\" KILN_REPOSITORY=\"\$h/\$r\" KILN_CACHE=\"\$h/\$c\" exec \"\$h/build/bin/kiln\" \"\$@\""
   exit = run("sh", ["-c", script, "sh", folder.value, home, repository.value, cache.value] + args)
   // The standard library is compiled once for all the tests, by whichever runs first.
   Exit(exit.code, exit.value.replace("  compiling the standard library\n", ""))

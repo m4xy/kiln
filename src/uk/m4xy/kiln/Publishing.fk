@@ -1,6 +1,8 @@
 import fckt.io.Path
 import fckt.io.Paths.*
 import fckt.io.Files.*
+import fckt.io.Processes.*
+import fckt.io.Process
 import fckt.effects.Fail
 import fckt.io.Console
 import uk.m4xy.kiln.Dependencies.*
@@ -24,18 +26,27 @@ module Publishing {
       }
     }
     coordinates = Coordinates(project.group, project.name, project.version)
-    target = publishedAt(coordinates)
+    target = publishedTo(coordinates)
     target.delete()
     target.makeDirs()
     write(target)
     target.resolve("dependencies").writeText(project.dependencies.flatMap { d ->
       when (d) {
         Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
-        Git(lib, _) -> ["${CoordinatesText.of(lib)}\n"]
+        Git(lib, source) -> [
+          "${CoordinatesText.of(lib)} ${source.url} ${source.ref} ${source.folder}\n",
+        ]
         Folder(_) -> []
         Kiln -> []
       }
     }.joinToString(""))
     println("  published ${CoordinatesText.of(coordinates)} to ${target.value}")
+  }
+
+  // Where it's published to: its folder in the local repository, or, as kiln publishes what it
+  // fetches from git, in KILN_PUBLISH.
+  @Process private publishedTo(lib: Coordinates): Path = when (env("KILN_PUBLISH")) {
+    Some(folder) -> path(folder).resolve("${lib.group}/${lib.name}/${lib.version}")
+    None -> publishedAt(lib)
   }
 }
