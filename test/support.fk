@@ -39,11 +39,17 @@ fckt = "import uk.m4xy.kiln.fckt.Fckt\nimport uk.m4xy.kiln.fckt.FcktTasks\n\nplu
 
 // A repository and a cache of the test's own, under build/test-own/name, fresh: what a test that
 // publishes and compiles libraries, and says what was compiled, runs kilnIn with, so tests run
-// together don't share them.
-@FileSystem own(name: String): Path = {
+// together don't share them. What every test compiles alike, the core, the standard library and
+// kiln's library for scripts, is compiled once, in the cache the tests share, and linked into it.
+@FileSystem @Process own(name: String): Path = {
   folder = path("build/test-own").resolve(name)
   folder.delete()
   folder.makeDirs()
+  warm = projects("warm/$name")
+  write(warm, "build.fk", fckt + "project = Project(name = \"warm\")\n")
+  assertEquals(0, kiln(warm, ["--quiet", "roots"]).code)
+  linked = "h=\$1; for t in build/test-cache/*/; do t=\${t%/}; n=\"\$h/cache/\${t##*/}\"; mkdir -p \"\$n\"; for e in \"\$t\"/core \"\$t\"/std-* \"\$t\"/kiln-*; do if [ -e \"\$e/done\" ]; then ln -s \"\$PWD/\$e\" \"\$n/\"; fi; done; done"
+  assertEquals(0, run("sh", ["-c", linked, "sh", folder.value]).code)
   folder
 }
 

@@ -301,8 +301,10 @@ are built with this one, applies here if `settings.fk` is here, or lists this fo
 projects, with its folders, as `Folders` makes them, from where it is. Then it compiles `build.fk`,
 with `settings.fk` beside it if it applies and what that says build scripts use, beside a `main`
 that hands `project`, `tasks`, `plugins` and `settings` to `uk.m4xy.kiln.Builds.runBuild`, with
-`fckt --import ...` and `ocamlopt`, to a program, `.kiln/build`, again only when the scripts or kiln
-change, and runs it. A script that doesn't declare `tasks`, `plugins` or `settings` has
+`fckt --import ...`, against kiln's library and the standard library, each compiled once, and
+`ocamlc`, to bytecode, `.kiln/build`, again only when the scripts or kiln change, and runs it with
+`ocamlrun`: macOS checks each program that's new before it first runs it, one at a time, which takes
+longer than a script does, and bytecode isn't one. A script that doesn't declare `tasks`, `plugins` or `settings` has
 `uk.m4xy.kiln.defaults`', none, none and `Settings()`'s; one that doesn't declare `project`, or a
 `settings.fk` without `settings`, is told so by fckt. That's `uk.m4xy.kiln.launch`, internal to kiln
 but for `Launch`'s `withSettings`, which build scripts don't see; `src/main.fk` reads the command

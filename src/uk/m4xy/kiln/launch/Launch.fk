@@ -86,6 +86,6 @@ module Launch {
       uses,
       Scripts.imports + ["uk.m4xy.kiln.defaults.*"],
     )
-    if (code != 0) 1 else runAttached(path(".kiln/build").value, args)
+    if (code != 0) 1 else runAttached("ocamlrun", [path(".kiln/build").value] + args)
   }
 }
