@@ -1,0 +1,3 @@
+// Where kiln fetches a library from when no repository has it: a git repository, the ref of it,
+// a branch, tag or commit, and the folder in it the library's project is in.
+type GitSource(url: String, ref: String, folder: String = ".")

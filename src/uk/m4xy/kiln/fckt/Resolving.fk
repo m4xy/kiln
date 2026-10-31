@@ -15,11 +15,12 @@ module Resolving {
   // The folders its packages are in, as layout says, and those its processors wrote, then its folder projects', each once; and the
   // libraries it uses, with theirs and its folder projects'. Where two ask for a library in
   // different versions, the higher is used.
-  @FileSystem @Process resolve(project: Project, layout: FcktLayout): Resolved = {
+  @Building resolve(project: Project, layout: FcktLayout): Resolved = {
     found = project.dependencies.flatMap { d ->
       when (d) {
         Folder(folder) -> [folderResolved(folder)]
         Library(_) -> []
+        Git(_, _) -> []
         Kiln -> []
       }
     }

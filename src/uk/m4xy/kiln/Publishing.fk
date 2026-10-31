@@ -19,6 +19,7 @@ module Publishing {
           "a published library can't use a project from a folder, ${folder.value}: publish that one too, and use it as a library",
         )
         Library(_) -> Unit
+        Git(_, _) -> Unit
         Kiln -> Unit
       }
     }
@@ -30,6 +31,7 @@ module Publishing {
     target.resolve("dependencies").writeText(project.dependencies.flatMap { d ->
       when (d) {
         Library(lib) -> ["${CoordinatesText.of(lib)}\n"]
+        Git(lib, _) -> ["${CoordinatesText.of(lib)}\n"]
         Folder(_) -> []
         Kiln -> []
       }

@@ -299,6 +299,30 @@ module Prices {
 }
 ```
 
+### From git
+
+A library no repository has can be fetched from git: kiln fetches the ref, a branch, tag or
+commit, `v` and the version if it doesn't say, publishes the project in it with
+`kiln publishLocal`, and uses it from the local repository from then on. Its own dependencies from
+git are fetched the same way, by the kiln publishing it, so a project names only what it uses
+itself.
+
+```kotlin
+project = Project(
+  name = "links",
+  dependencies = [
+    library("uk.m4xy:fk-http:0.1.0", git = "https://github.com/m4xy/fk-http", ref = "main"),
+    // A project in a folder of the repository, rather than at its top.
+    library("fckt:symbols:0.1.0", git = "https://github.com/m4xy/fckt", ref = "main", folder = "symbols"),
+  ],
+)
+```
+
+A version in the local repository is never fetched again, so a library published there by hand
+is used rather than git's, and a branch is what it was when it was first fetched: to have it
+again, delete its folder there. When several kilns want one at the same time, one fetches it while
+the others wait.
+
 ## How it works
 
 kiln reads nothing of its scripts but what they declare, as values, as fckt checks them: none of it

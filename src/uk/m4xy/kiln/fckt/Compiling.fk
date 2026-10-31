@@ -237,19 +237,8 @@ module Compiling {
   @Building internal made(folder: Path, make: @Building (Path) -> Unit): Unit =
     if (!folder.resolve("done").exists()) {
       folder.parent.forEach { it.makeDirs() }
-      lock = folder.value + ".lock"
-      // One kiln makes it while the others wait for it, rather than each making it again.
-      if (locked(lock)) {
-        made = attempt { whole(folder, make) }
-        unlocked(lock)
-        when (made) {
-          Ok(_) -> Unit
-          Error(reason) -> fail(reason)
-        }
-      }
-      else {
-        awaited(folder, lock)
-        made(folder, make)
+      Locks.once(folder.value + ".lock", () -> folder.resolve("done").exists()) {
+        whole(folder, make)
       }
     }
 
@@ -261,28 +250,6 @@ module Compiling {
     if (!folder.resolve("done").exists()) folder.delete()
     if (!moved(at.value, folder.value)) at.delete()
   }
-
-  // Waits until folder's made, or lock's let go, as the kiln that holds it has ended.
-  @FileSystem private awaited(folder: Path, lock: String): Unit =
-    if (folder.resolve("done").exists() || !path(lock).exists()) Unit
-    else if (abandoned(lock)) unlocked(lock)
-    else {
-      pause(0.05)
-      awaited(folder, lock)
-    }
-
-  // Whether this kiln now holds lock: a folder, with its process's id in it.
-  private external locked(lock: String): Boolean =
-    "(fun p -> try Sys.mkdir p 0o755; let oc = open_out (Filename.concat p \"pid\") in output_string oc (string_of_int (Unix.getpid ())); close_out oc; true with Sys_error _ -> false) lock"
-
-  private external unlocked(lock: String): Unit =
-    "(fun p -> (try Sys.remove (Filename.concat p \"pid\") with Sys_error _ -> ()); try Sys.rmdir p with Sys_error _ -> ()) lock"
-
-  // Whether the process that holds lock has ended without letting it go.
-  private external abandoned(lock: String): Boolean =
-    "(fun p -> try let ic = open_in (Filename.concat p \"pid\") in let pid = int_of_string (input_line ic) in close_in ic; (try Unix.kill pid 0; false with Unix.Unix_error (Unix.ESRCH, _, _) -> true) with _ -> false) lock"
-
-  private external pause(seconds: Float): Unit = "Unix.sleepf seconds"
 
   // Whether from was moved to to, which it replaces, if it's a file, or an empty folder.
   internal external moved(
@@ -370,6 +337,7 @@ module Compiling {
     published(lib, repositories).flatMap { d ->
       when (d) {
         Library(wanted) -> chosen.filter { it.group == wanted.group && it.name == wanted.name }
+        Git(wanted, _) -> chosen.filter { it.group == wanted.group && it.name == wanted.name }
         Folder(_) -> []
         Kiln -> []
       }

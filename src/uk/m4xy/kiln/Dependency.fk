@@ -1,10 +1,12 @@
 import fckt.io.Path
 
-// What a project uses: a library published with publishLocal, by its coordinates; another project,
+// What a project uses: a library published with publishLocal, by its coordinates, or fetched from
+// git and published when no repository has it; another project,
 // straight from its folder, as it is now; or kiln's own library, uk.m4xy.kiln, which a plugin uses
 // and whatever build script uses the plugin has. uk.m4xy.kiln.Dependencies makes them.
 type Dependency {
   Library(coordinates: Coordinates),
+  Git(coordinates: Coordinates, source: GitSource),
   Folder(path: Path),
   Kiln,
 }

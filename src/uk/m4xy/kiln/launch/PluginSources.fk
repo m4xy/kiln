@@ -22,6 +22,10 @@ internal module PluginSources {
     when (used) {
       Folder(folder) -> [folder.resolve("src")]
       Library(lib) -> librarySources(lib, emptySet(), repositories)
+      Git(lib, source) -> {
+        Dependencies.fetched(lib, source, repositories)
+        librarySources(lib, emptySet(), repositories)
+      }
       Kiln -> []
     }
   }.distinct()

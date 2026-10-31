@@ -46,6 +46,7 @@ module Builds {
   ): Unit = {
     given = args.takeWhile { it != "--" }
     quiet = given.contains("--quiet")
+    if (quiet) setEnv("KILN_QUIET", "1")
     names = given.filter { it != "--quiet" }
     build = Invocation(
       project.copy(repositories = settings.from(settingsFolder()).repositories),

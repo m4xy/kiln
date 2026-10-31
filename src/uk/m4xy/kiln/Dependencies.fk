@@ -8,11 +8,21 @@ import fckt.effects.Fail
 
 // What a project depends on, and where their packages are.
 module Dependencies {
-  // A library from the local repository, as group:name:version: library("uk.m4xy:json:1.2.0").
-  library(coordinates: String): Dependency = when (CoordinatesText.read(coordinates)) {
-    Ok(lib) -> Library(lib)
-    Error(problem) -> error(problem)
-  }
+  // A library from the local repository, as group:name:version: library("uk.m4xy:json:1.2.0");
+  // or, with git, from a git repository when the local repository hasn't got it: from ref, a
+  // branch, tag or commit, v and the version if it doesn't say, and the project in folder of it.
+  library(
+    coordinates: String,
+    git: String = "",
+    ref: String = "",
+    folder: String = ".",
+  ): Dependency =
+    when (CoordinatesText.read(coordinates)) {
+      Ok(lib) ->
+        if (git.isEmpty()) Library(lib)
+        else Git(lib, GitSource(git, if (ref.isEmpty()) "v${lib.version}" else ref, folder))
+      Error(problem) -> error(problem)
+    }
 
   // Another project, from its folder: its packages as they are, with what it depends on.
   projectAt(folder: String): Dependency = Folder(path(folder))
@@ -54,8 +64,8 @@ module Dependencies {
 
   private within(lib: Coordinates): String = "${lib.group}/${lib.name}/${lib.version}"
 
-  // The libraries asked for, with theirs, as the repositories say.
-  @FileSystem @Process libraries(
+  // The libraries asked for, with theirs, as the repositories say, those from git fetched first.
+  @Building libraries(
     wanted: List<Dependency>,
     found: List<Coordinates>,
     repositories: List<Repository>,
@@ -71,6 +81,10 @@ module Dependencies {
         }
         libraries(rest + published(lib, repositories), found + [lib], repositories)
       }
+    [Git(lib, source), *rest] -> {
+      fetched(lib, source, repositories)
+      libraries([Library(lib)] + rest, found, repositories)
+    }
     [Folder(_), *rest] -> libraries(rest, found, repositories)
     [Kiln, *rest] -> libraries(rest, found, repositories)
   }
@@ -86,6 +100,36 @@ module Dependencies {
     }
     None -> []
   }
+
+  // lib, as source says, from git, published with kiln publishLocal, which fetches what it uses
+  // the same way; unless one of repositories has it already.
+  @Building internal fetched(
+    lib: Coordinates,
+    source: GitSource,
+    repositories: List<Repository>,
+  ): Unit = {
+    target = publishedAt(lib)
+    target.parent.forEach { it.makeDirs() }
+    Locks.once(target.value + ".fetching", () -> folderOf(lib, repositories).isSome()) {
+      args = ["-c", script, "sh", source.url, source.ref, source.folder, kilnProgram()]
+      failed = "couldn't publish ${CoordinatesText.of(lib)} from ${source.url} at ${source.ref}"
+      // Run --quiet, for another program to read, what it prints is said only if it fails.
+      if (env("KILN_QUIET").isSome()) {
+        exit = run("sh", args)
+        if (exit.code != 0) fail("$failed:\n${exit.value.trim()}")
+      }
+      else if (runAttached("sh", args) != 0) fail(failed)
+      if (folderOf(lib, repositories).isNone()) fail(
+        "${source.url} at ${source.ref} doesn't publish ${CoordinatesText.of(lib)}${if (source.folder == ".") "" else " from ${source.folder}"}",
+      )
+    }
+  }
+
+  @Process private kilnProgram(): String = env("KILN").getOrElse("kiln")
+
+  // Fetches the ref alone, published from a folder that's gone after; all it prints goes where
+  // errors go, so what kiln prints for another program to read is as it was.
+  private script = "set -e; exec 1>&2; at=\$(mktemp -d); trap 'rm -rf \"\$at\"' EXIT; echo \"  fetching \$1 at \$2\"; git -C \"\$at\" init -q; git -C \"\$at\" fetch -q --depth 1 \"\$1\" \"\$2\"; git -C \"\$at\" -c advice.detachedHead=false checkout -q FETCH_HEAD; unset KILN_SETTINGS; \"\$4\" -C \"\$at/\$3\" publishLocal"
 
   // Of each library, the highest version asked for.
   chosen(libs: List<Coordinates>): List<Coordinates> =
