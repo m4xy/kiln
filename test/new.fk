@@ -1,0 +1,31 @@
+import fckt.io.FileSystem
+import fckt.io.Process
+import fckt.io.Paths.*
+import fckt.io.Files.*
+import uk.m4xy.fktests.api.Test
+
+// kiln new makes a project to start from: a program that says hello, with a test of what it says.
+@Test @FileSystem @Process aNewProjectIsMade() = {
+  dir = projects("new")
+  expectContains(kiln(dir, ["new", "Hello-World"]).value, "made Hello-World")
+  made = dir.resolve("Hello-World")
+  assert(made.resolve("src/helloworld/Greetings.fk").exists())
+  expectContains(made.resolve("test/greetings.fk").readText(), "@Test greetsByName()")
+  // It's built with fk-tests' plugin, which this repository hasn't, so it's run without it here.
+  write(made, "settings.fk", "settings = Settings()\n")
+  write(made, "build.fk", fckt + "project = Project(name = \"Hello-World\")\n")
+  expectContains(kiln(made, ["run"]).value, "> Task :run\nHello, world!\n")
+  // A folder that's there already isn't made again.
+  assertEquals(1, kiln(dir, ["new", "Hello-World"]).code)
+}
+
+// With --library, its packages are under its group, and it has no main.
+@Test @FileSystem @Process aNewLibraryIsUnderItsGroup() = {
+  dir = projects("new-library")
+  assertEquals(0, kiln(dir, ["new", "money", "--library", "com.example"]).code)
+  made = dir.resolve("money")
+  assert(made.resolve("src/com/example/money/Greetings.fk").exists())
+  assert(!made.resolve("src/main.fk").exists())
+  expectContains(made.resolve("build.fk").readText(), "group = \"com.example\"")
+  assertEquals(2, kiln(dir, ["new", "coins", "--library", "Com"]).code)
+}

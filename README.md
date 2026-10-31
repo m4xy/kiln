@@ -52,6 +52,14 @@ export PATH="$HOME/.kiln/bin:$PATH"
 It installs `~/.kiln/bin/kiln`, and kiln's library, which build scripts use, in `~/.kiln/lib/kiln`;
 `KILN_HOME` puts both elsewhere. After that, kiln builds itself: `kiln build`, `kiln install`.
 
+## Starting a project
+
+`kiln new hello` makes a project to start from, in `hello`: a program, `src/main.fk`, that says
+hello with what a module in the package `hello` says, a test of that module in `test`, and the
+build script and settings that build it with fckt and test it with fk-tests. `cd hello`, then
+`kiln build`, and `kiln run`. `kiln new money --library com.example` makes a library instead: its
+module in `com.example.money`, as a library's packages are under its group, with no `main`.
+
 ## Tasks
 
 Every project has `clean`, `check` and `build`; its plugins bring the rest, as `Fckt` brings
